@@ -1,3 +1,4 @@
+import { Button } from '@/components/ui/button';
 import Image from 'next/image';
 
 export default function Home() {
@@ -18,6 +19,8 @@ export default function Home() {
           <div className="px-4 py-2 bg-purple-100 text-purple-800 rounded-lg font-medium">
             ✅ Tailwind CSS
           </div>
+
+          <Button>Click me</Button>
         </div>
       </div>
     </div>

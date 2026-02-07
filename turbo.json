@@ -7,7 +7,7 @@
 
   // dependsOn: ["^build"]: The ^ means "build dependencies FIRST"
 
-  "pipeline": {
+  "tasks": {
     "build": {
       // If apps/web depends on packages/ui, Turborepo builds packages/ui first
       // Without ^, they'd run in parallel (wrong - web needs ui built first!)
