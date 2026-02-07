@@ -1,0 +1,32 @@
+{
+  // $schema: Enables autocomplete in your editor for turbo.json
+  "$schema": "https://turbo.build/schema.json",
+  // Files that, when changed, invalidate ALL caches
+  "globalDependencies": ["**/.env.*local"],
+  // pipeline: Defines how tasks run across your monorepo
+
+  // dependsOn: ["^build"]: The ^ means "build dependencies FIRST"
+
+  "pipeline": {
+    "build": {
+      // If apps/web depends on packages/ui, Turborepo builds packages/ui first
+      // Without ^, they'd run in parallel (wrong - web needs ui built first!)
+      "dependsOn": ["^build"],
+
+      // What files to cache
+      "outputs": [".next/**", "!.next/cache/**", "dist/**"]
+    },
+    "dev": {
+      // Don't cache in dev  mode - they should run fresh each time
+      "cache": false,
+      // Keep dev tasks running even when no tasks are running
+      "persistent": true
+    },
+    "lint": {
+      "dependsOn": ["^lint"]
+    },
+    "type-check": {
+      "dependsOn": ["^type-check"]
+    }
+  }
+}

@@ -1,0 +1,7 @@
+# Tells pnpm which folders contain packages that should be part of the workspace
+
+packages:
+  # all applications (your Next.js frontend, maybe admin panel later)
+  - 'apps/*'
+  # all packages (shared utilities, hooks, etc.)
+  - 'packages/*'
