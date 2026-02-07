@@ -19,7 +19,8 @@
       }
     ],
     "paths": {
-      "@/*": ["./*"]
+      "@/*": ["./*"],
+      "@chat-bot/types": ["../../packages/types/index.ts"]
     }
   },
   "include": [
