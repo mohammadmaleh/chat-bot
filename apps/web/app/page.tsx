@@ -1,7 +1,20 @@
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from '@/components/ui/button';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import type { Message } from '@chat-bot/types';
 
 export default function Home() {
+  const testMessage: Message = {
+    id: '1',
+    role: 'user',
+    content: 'Hello, how are you?',
+    createdAt: new Date().toISOString(),
+  };
   return (
     <main className="min-h-screen bg-gradient-to-br from-zinc-50 via-white to-blue-50">
       <div className="container mx-auto px-4 py-20 max-w-4xl">
@@ -14,10 +27,17 @@ export default function Home() {
             Modern, scalable AI assistant built with the latest 2026 stack
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Button size="lg" className="px-12 py-8 text-xl font-semibold shadow-2xl hover:shadow-3xl">
+            <Button
+              size="lg"
+              className="px-12 py-8 text-xl font-semibold shadow-2xl hover:shadow-3xl"
+            >
               🚀 Start Chatting
             </Button>
-            <Button variant="outline" size="lg" className="px-12 py-8 text-xl font-semibold border-2">
+            <Button
+              variant="outline"
+              size="lg"
+              className="px-12 py-8 text-xl font-semibold border-2"
+            >
               📖 View Docs
             </Button>
           </div>
@@ -44,9 +64,7 @@ export default function Home() {
               <CardTitle className="flex items-center gap-2 text-2xl">
                 🧠 Semantic Search
               </CardTitle>
-              <CardDescription>
-                RAG with vector databases
-              </CardDescription>
+              <CardDescription>RAG with vector databases</CardDescription>
             </CardHeader>
             <CardContent>
               <p>PostgreSQL pgvector + Qdrant for intelligent context</p>
@@ -58,9 +76,7 @@ export default function Home() {
               <CardTitle className="flex items-center gap-2 text-2xl">
                 🔄 Scalable
               </CardTitle>
-              <CardDescription>
-                Built for millions of users
-              </CardDescription>
+              <CardDescription>Built for millions of users</CardDescription>
             </CardHeader>
             <CardContent>
               <p>Monorepo + Turborepo + Horizontal scaling ready</p>
@@ -69,5 +85,5 @@ export default function Home() {
         </div>
       </div>
     </main>
-  )
+  );
 }
