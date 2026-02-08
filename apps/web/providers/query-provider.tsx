@@ -1,35 +1,18 @@
 'use client';
 
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
-import { useState } from 'react';
+import { queryClient } from '@/lib/query/client';
+import { ReactNode } from 'react';
 
-export function QueryProvider({ children }: { children: React.ReactNode }) {
-  const [queryClient] = useState(
-    () =>
-      new QueryClient({
-        defaultOptions: {
-          queries: {
-            // Data considered fresh for 60 seconds
-            staleTime: 60 * 1000,
-            // Keep unused data in cache for 5 minutes
-            gcTime: 5 * 60 * 1000,
-            // Retry failed requests 1 time
-            retry: 1,
-            // Refetch on window focus for real-time feel
-            refetchOnWindowFocus: true,
-          },
-        },
-      })
-  );
-
+export function QueryProvider({ children }: { children: ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
       {children}
-      {/* DevTools only in development */}
-      <ReactQueryDevtools initialIsOpen={false} />
+      {/* Only show in development */}
+      {process.env.NODE_ENV === 'development' && (
+        <ReactQueryDevtools initialIsOpen={false} position="bottom" />
+      )}
     </QueryClientProvider>
   );
 }
-
-
