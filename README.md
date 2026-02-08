@@ -1,3 +1,4 @@
+
 # 🛍️ German Price Comparison AI Assistant
 
 > **A modern, conversational AI-powered price comparison platform for German online stores**
