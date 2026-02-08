@@ -37,19 +37,28 @@ services:
       timeout: 3s
       retries: 5
 
-  # Prisma Studio (Database GUI - optional)
-  # Uncomment when you want to use it
-  # prisma-studio:
-  #   image: node:20-alpine
-  #   container_name: chatbot-prisma-studio
-  #   working_dir: /app
-  #   command: npx prisma studio
-  #   ports:
-  #     - "5555:5555"
-  #   depends_on:
-  #     - postgres
-  #   volumes:
-  #     - ./packages/database:/app
+  # Python AI Service (NEW)
+  ai-service:
+    build:
+      context: ./apps/ai-service
+      dockerfile: Dockerfile
+    container_name: chatbot-ai-service
+    restart: unless-stopped
+    ports:
+      - '8001:8001'
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - PYTHONUNBUFFERED=1
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./apps/ai-service:/app
+      - /app/.venv  # Don't mount venv
+    command: uvicorn main:app --host 0.0.0.0 --port 8001 --reload
 
 volumes:
   postgres_data:
