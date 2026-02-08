@@ -1,58 +1,139 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { fetchApi } from '@/lib/api-client';
-import { ChatRequest, ChatResponse, Conversation } from '@/types';
+import { useState, useCallback } from 'react'
+import { useMutation } from '@tanstack/react-query'
+import { chatApi } from '../lib/api/chat'
+import type { Message, ChatMessage } from '../types/api'
 
-// Send chat message
-export function useSendMessage() {
-  const queryClient = useQueryClient();
+export function useChat() {
+  const [messages, setMessages] = useState<Message[]>([])
+  const [isStreaming, setIsStreaming] = useState(false)
 
-  return useMutation({
-    mutationFn: async (data: ChatRequest) => {
-      return fetchApi<ChatResponse>('/chat', {
-        method: 'POST',
-        body: JSON.stringify(data),
-      });
-    },
+  const mutation = useMutation({
+    mutationFn: chatApi.sendMessage,
     onSuccess: (data) => {
-      // Invalidate and refetch conversations
-      queryClient.invalidateQueries({ queryKey: ['conversations'] });
-      queryClient.invalidateQueries({
-        queryKey: ['conversation', data.conversationId],
-      });
+      // Add AI response to messages
+      const aiMessage: Message = {
+        id: `msg-${Date.now()}`,
+        role: 'assistant',
+        content: data.response,
+        timestamp: new Date(),
+        products: data.products,
+      }
+      setMessages((prev) => [...prev, aiMessage])
     },
-  });
-}
+  })
 
-// Get all conversations for a user
-export function useConversations(userId: string) {
-  return useQuery({
-    queryKey: ['conversations', userId],
-    queryFn: () => fetchApi<Conversation[]>(`/conversations?userId=${userId}`),
-    enabled: !!userId,
-  });
-}
+  const sendMessage = useCallback(
+    async (content: string) => {
+      // Add user message immediately
+      const userMessage: Message = {
+        id: `msg-${Date.now()}-user`,
+        role: 'user',
+        content,
+        timestamp: new Date(),
+      }
+      setMessages((prev) => [...prev, userMessage])
 
-// Get single conversation with messages
-export function useConversation(conversationId?: string) {
-  return useQuery({
-    queryKey: ['conversation', conversationId],
-    queryFn: () => fetchApi<Conversation>(`/conversations/${conversationId}`),
-    enabled: !!conversationId,
-  });
-}
+      // Prepare conversation history
+      const history: ChatMessage[] = messages.map((msg) => ({
+        role: msg.role,
+        content: msg.content,
+      }))
 
-// Delete conversation
-export function useDeleteConversation() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (conversationId: string) => {
-      return fetchApi(`/conversations/${conversationId}`, {
-        method: 'DELETE',
-      });
+      // Send to API
+      mutation.mutate({
+        message: content,
+        conversation_history: history,
+      })
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['conversations'] });
+    [messages, mutation]
+  )
+
+  const sendMessageStream = useCallback(
+    async (content: string) => {
+      // Add user message
+      const userMessage: Message = {
+        id: `msg-${Date.now()}-user`,
+        role: 'user',
+        content,
+        timestamp: new Date(),
+      }
+      setMessages((prev) => [...prev, userMessage])
+
+      setIsStreaming(true)
+
+      // Prepare AI message container
+      const aiMessageId = `msg-${Date.now()}-ai`
+      let aiContent = ''
+      let products: any[] | undefined
+
+      // Add empty AI message
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: aiMessageId,
+          role: 'assistant',
+          content: '',
+          timestamp: new Date(),
+        },
+      ])
+
+      try {
+        const history: ChatMessage[] = messages.map((msg) => ({
+          role: msg.role,
+          content: msg.content,
+        }))
+
+        for await (const chunk of chatApi.streamMessage({
+          message: content,
+          conversation_history: history,
+        })) {
+          // Check if chunk is products data
+          try {
+            const parsed = JSON.parse(chunk)
+            if (parsed.products) {
+              products = parsed.products
+              continue
+            }
+          } catch {
+            // Regular text chunk
+            aiContent += chunk
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === aiMessageId
+                  ? { ...msg, content: aiContent, products }
+                  : msg
+              )
+            )
+          }
+        }
+      } catch (error) {
+        console.error('Streaming error:', error)
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === aiMessageId
+              ? {
+                  ...msg,
+                  content: "I'm sorry, I encountered an error. Please try again.",
+                }
+              : msg
+          )
+        )
+      } finally {
+        setIsStreaming(false)
+      }
     },
-  });
+    [messages]
+  )
+
+  const clearMessages = useCallback(() => {
+    setMessages([])
+  }, [])
+
+  return {
+    messages,
+    sendMessage,
+    sendMessageStream,
+    clearMessages,
+    isLoading: mutation.isPending || isStreaming,
+  }
 }

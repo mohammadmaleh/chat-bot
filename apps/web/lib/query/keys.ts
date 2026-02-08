@@ -3,6 +3,12 @@ export const queryKeys = {
   // Health
   health: ['health'] as const,
 
+  // Chat
+  chat: {
+    all: ['chat'] as const,
+    messages: () => [...queryKeys.chat.all, 'messages'] as const,
+  },
+
   // Conversations
   conversations: {
     all: ['conversations'] as const,
