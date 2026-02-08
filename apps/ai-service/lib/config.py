@@ -1,3 +1,4 @@
+from typing import List
 from pydantic_settings import BaseSettings
 from functools import lru_cache
 from pathlib import Path
@@ -13,7 +14,7 @@ class Settings(BaseSettings):
     # API Configuration
     api_port: int = 8001
     api_host: str = "0.0.0.0"
-    allowed_origins: list[str] = [
+    allowed_origins: List[str] = [
         "http://localhost:3000",
         "http://localhost:3001",
         "http://localhost:8000"
