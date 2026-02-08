@@ -1,21 +1,20 @@
-cat > (src / index.ts) << 'EOF';
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
 import { config } from 'dotenv';
+import { storesRoutes } from './routes/stores.js';
+import { productsRoutes } from './routes/products.js';
+import { conversationsRoutes } from './routes/conversations.js';
 
-// Load environment variables
 config();
 
-// Create Fastify instance
 const app = Fastify({
   logger: {
     level: process.env.LOG_LEVEL || 'info',
   },
 });
 
-// Register plugins
 await app.register(helmet);
 await app.register(cors, {
   origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
@@ -44,7 +43,11 @@ app.get('/', async () => {
   };
 });
 
-// Start server
+// Register routes
+await app.register(storesRoutes, { prefix: '/api' });
+await app.register(productsRoutes, { prefix: '/api' });
+await app.register(conversationsRoutes, { prefix: '/api' });
+
 const start = async () => {
   try {
     const port = Number(process.env.PORT) || 8000;
@@ -59,4 +62,3 @@ const start = async () => {
 };
 
 start();
-EOF;
