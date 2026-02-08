@@ -52,7 +52,6 @@ await app.register(conversationsRoutes, { prefix: '/api' });
 await app.register(usersRoutes, { prefix: '/api' });
 await app.register(chatRoutes, { prefix: '/api' });
 
-
 const start = async () => {
   try {
     const port = Number(process.env.PORT) || 8000;

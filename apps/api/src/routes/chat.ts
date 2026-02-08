@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { PrismaClient } from '@chat-bot/database';
-import { generateAIResponse, extractUserIntent } from '../services/ai.ts';
+import { generateAIResponse, extractUserIntent } from '../services/ai.js';
 
 const prisma = new PrismaClient();
 
