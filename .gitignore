@@ -102,3 +102,7 @@ docker-compose.override.yml
 *.backup
 *.bak
 *.old
+
+
+amazon_search.png
+test_*.py
