@@ -6,9 +6,10 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime
 from prisma import Prisma
 from decimal import Decimal
-from ..scrapers.base_scraper import ScrapedProduct
-from .cache_service import CacheService
 
+# Absolute imports instead of relative
+from scrapers.base_scraper import ScrapedProduct
+from services.cache_service import CacheService
 
 class PriceService:
     """Service for managing products, prices, and stores in the database."""
@@ -240,7 +241,8 @@ class PriceService:
             store_scrapers: Dict of {store_name: scraper_instance}
         """
         # Get product
-        product = await self.db.product.find_unique(where={'id': product_id})
+        product = await self.db.product.find_un
+        ique(where={'id': product_id})
         if not product:
             return
         

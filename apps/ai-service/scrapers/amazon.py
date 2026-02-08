@@ -3,8 +3,8 @@ Amazon.de scraper implementation.
 Handles product search and detail extraction from Amazon Germany.
 """
 from typing import List, Optional
-from .base_scraper import BaseScraper, ScrapedProduct
-from .utils import sanitize_price, extract_asin, wait_for_rate_limit
+from scrapers.base_scraper import BaseScraper, ScrapedProduct
+from scrapers.utils import sanitize_price, extract_asin, wait_for_rate_limit
 import asyncio
 
 
@@ -42,6 +42,8 @@ class AmazonScraper(BaseScraper):
             products = []
             product_cards = await self.page.query_selector_all('[data-component-type="s-search-result"]')
             
+            print(f"Found {len(product_cards)} product cards on page")
+            
             for card in product_cards[:max_results]:
                 try:
                     product = await self._extract_search_result(card)
@@ -63,38 +65,79 @@ class AmazonScraper(BaseScraper):
     async def _extract_search_result(self, card) -> Optional[ScrapedProduct]:
         """Extract product info from search result card."""
         try:
-            # Title/Name
-            title_elem = await card.query_selector('h2 a span')
-            name = await title_elem.inner_text() if title_elem else None
+            # Title/Name - try multiple selectors
+            name = None
+            title_selectors = [
+                'h2 a span',
+                'h2 span',
+                '.a-text-normal',
+                '[data-cy="title-recipe"] span'
+            ]
+            
+            for selector in title_selectors:
+                title_elem = await card.query_selector(selector)
+                if title_elem:
+                    name = await title_elem.inner_text()
+                    if name and len(name.strip()) > 0:
+                        break
             
             if not name:
                 return None
             
             # URL
-            link_elem = await card.query_selector('h2 a')
+            link_elem = await card.query_selector('h2 a, a.a-link-normal')
             href = await link_elem.get_attribute('href') if link_elem else None
-            url = f"{self.base_url}{href}" if href else None
+            url = f"{self.base_url}{href}" if href and href.startswith('/') else href
             
-            # Price
-            price_whole = await card.query_selector('.a-price-whole')
-            price_fraction = await card.query_selector('.a-price-fraction')
-            
+            # Price - try multiple selectors
             price = None
-            if price_whole and price_fraction:
-                whole = await price_whole.inner_text()
-                fraction = await price_fraction.inner_text()
-                price_str = f"{whole}{fraction}"
-                price = sanitize_price(price_str)
+            price_selectors = [
+                '.a-price .a-offscreen',
+                '.a-price-whole',
+                'span[data-a-color="price"] .a-offscreen',
+                '.a-price span:first-child'
+            ]
+            
+            for selector in price_selectors:
+                price_elem = await card.query_selector(selector)
+                if price_elem:
+                    price_text = await price_elem.inner_text()
+                    price = sanitize_price(price_text)
+                    if price and price > 0:
+                        break
+            
+            # If still no price, try combining whole and fraction
+            if not price:
+                price_whole = await card.query_selector('.a-price-whole')
+                price_fraction = await card.query_selector('.a-price-fraction')
+                
+                if price_whole and price_fraction:
+                    whole = await price_whole.inner_text()
+                    fraction = await price_fraction.inner_text()
+                    price_str = f"{whole}{fraction}"
+                    price = sanitize_price(price_str)
             
             # Image
-            img_elem = await card.query_selector('img.s-image')
-            image_url = await img_elem.get_attribute('src') if img_elem else None
+            image_url = None
+            img_selectors = ['img.s-image', 'img[data-image-latency]', 'img']
+            
+            for selector in img_selectors:
+                img_elem = await card.query_selector(selector)
+                if img_elem:
+                    image_url = await img_elem.get_attribute('src')
+                    if image_url and 'https://' in image_url:
+                        break
             
             # Availability check (if no price, likely unavailable)
-            availability = price is not None
+            availability = price is not None and price > 0
             
-            # Extract ASIN for EAN lookup later
-            asin = extract_asin(url) if url else None
+            # Extract ASIN from data attribute or URL
+            asin = await card.get_attribute('data-asin')
+            if not asin and url:
+                asin = extract_asin(url)
+            
+            # Debug print
+            print(f"  ✓ Extracted: {name[:40]}... | €{price} | {url[:50] if url else 'no url'}...")
             
             return ScrapedProduct(
                 name=name.strip(),
@@ -108,7 +151,7 @@ class AmazonScraper(BaseScraper):
             )
             
         except Exception as e:
-            print(f"Error extracting search result: {e}")
+            print(f"  ✗ Error extracting card: {e}")
             return None
     
     async def get_product(self, url: str) -> Optional[ScrapedProduct]:
@@ -140,7 +183,8 @@ class AmazonScraper(BaseScraper):
                 '.a-price .a-offscreen',
                 '#priceblock_ourprice',
                 '#priceblock_dealprice',
-                '.a-price-whole'
+                '.a-price-whole',
+                '#corePrice_feature_div .a-offscreen'
             ]
             
             for selector in price_selectors:
