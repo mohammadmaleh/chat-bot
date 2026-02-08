@@ -1,28 +1,28 @@
 {
-  "name": "api",
+  "name": "@chat-bot/api",
   "version": "1.0.0",
+  "private": true,
   "type": "module",
-  "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
   "dependencies": {
-    "@chat-bot/database": "workspace:^",
-    "@fastify/cors": "^11.2.0",
-    "@fastify/helmet": "^13.0.2",
-    "@fastify/rate-limit": "^10.3.0",
-    "dotenv": "^17.2.4",
-    "fastify": "^5.7.4",
-    "zod": "^4.3.6"
+    "@chat-bot/database": "workspace:*",
+    "bcrypt": "^6.0.0",
+    "cors": "^2.8.6",
+    "dotenv": "^16.4.7",
+    "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
+    "zod": "^3.24.1"
   },
   "devDependencies": {
-    "@types/node": "^20",
-    "tsx": "^4.21.0",
-    "typescript": "^5"
+    "@types/bcrypt": "^6.0.0",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/jsonwebtoken": "^9.0.10",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
   }
 }

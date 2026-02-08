@@ -1,68 +1,40 @@
-import Fastify from 'fastify';
-import cors from '@fastify/cors';
-import helmet from '@fastify/helmet';
-import rateLimit from '@fastify/rate-limit';
-import { config } from 'dotenv';
-import { storesRoutes } from './routes/stores.js';
-import { productsRoutes } from './routes/products.js';
-import { conversationsRoutes } from './routes/conversations.js';
-import { usersRoutes } from './routes/users.js';
-import { chatRoutes } from './routes/chat.js';
+import express from 'express';
+import cors from 'cors';
+import dotenv from 'dotenv';
+import authRoutes from './routes/auth.js';
 
-config();
+// Load environment variables
+dotenv.config({ path: '../../.env' });
 
-const app = Fastify({
-  logger: {
-    level: process.env.LOG_LEVEL || 'info',
-  },
-});
+const app = express();
+const PORT = process.env.PORT || 4000;
 
-await app.register(helmet);
-await app.register(cors, {
-  origin: process.env.CORS_ORIGIN || 'http://localhost:3000',
+// Middleware
+app.use(cors({
+  origin: ['http://localhost:3000', 'http://localhost:3001'],
   credentials: true,
-});
-await app.register(rateLimit, {
-  max: 100,
-  timeWindow: '15 minutes',
-});
+}));
+app.use(express.json());
 
-// Health check route
-app.get('/health', async () => {
-  return {
-    status: 'healthy',
-    timestamp: new Date().toISOString(),
-    service: 'chat-bot-api',
-  };
+// Routes
+app.get('/', (req, res) => {
+  res.json({ 
+    message: '🚀 Chat-Bot API Ready!', 
+    status: 'alive',
+    version: '1.0.0'
+  });
 });
 
-// Root route
-app.get('/', async () => {
-  return {
-    message: '🤖 German Price Comparison AI API',
-    version: '1.0.0',
-    docs: '/docs',
-  };
+app.get('/health', (req, res) => {
+  res.json({ status: 'healthy', backend: 'Express + TypeScript' });
 });
 
-// Register routes
-await app.register(storesRoutes, { prefix: '/api' });
-await app.register(productsRoutes, { prefix: '/api' });
-await app.register(conversationsRoutes, { prefix: '/api' });
-await app.register(usersRoutes, { prefix: '/api' });
-await app.register(chatRoutes, { prefix: '/api' });
+// Auth routes
+app.use('/api/auth', authRoutes);
 
-const start = async () => {
-  try {
-    const port = Number(process.env.PORT) || 8000;
-    const host = process.env.HOST || '0.0.0.0';
-
-    await app.listen({ port, host });
-    console.log(`🚀 Server running on http://localhost:${port}`);
-  } catch (err) {
-    app.log.error(err);
-    process.exit(1);
-  }
-};
-
-start();
+// Start server
+app.listen(PORT, () => {
+  console.log(`\n🚀 API Server running on http://localhost:${PORT}`);
+  console.log(`📊 Health check: http://localhost:${PORT}/health`);
+  console.log(`🔐 Auth endpoints: http://localhost:${PORT}/api/auth/*\n`);
+});
