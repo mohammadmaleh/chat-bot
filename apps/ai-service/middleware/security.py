@@ -1,303 +1,307 @@
 """
 Security Middleware
-Implements rate limiting, CORS validation, input sanitization, and security headers.
+Implements comprehensive security features including:
+- Security headers (CSP, HSTS, X-Frame-Options)
+- Request size limits
+- Input sanitization
+- Request logging
 """
 from fastapi import Request, HTTPException, status
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
-from slowapi.errors import RateLimitExceeded
 from starlette.middleware.base import BaseHTTPMiddleware
 from typing import Callable
 import time
+import logging
 import re
-import html
-from config import settings
+from html import escape
+
+logger = logging.getLogger(__name__)
+
+# Maximum request body size (10 MB)
+MAX_REQUEST_SIZE = 10 * 1024 * 1024
+
+# SQL injection patterns to detect
+SQL_INJECTION_PATTERNS = [
+    r"(\bunion\b.*\bselect\b)",
+    r"(\bselect\b.*\bfrom\b)",
+    r"(\bdrop\b.*\btable\b)",
+    r"(\binsert\b.*\binto\b)",
+    r"(\bdelete\b.*\bfrom\b)",
+    r"(\bupdate\b.*\bset\b)",
+    r"(--|#|/\*|\*/)",
+    r"(\bor\b.*=.*)",
+    r"(\band\b.*=.*)",
+    r"('.*or.*'.*=.*')",
+]
+
+# XSS patterns to detect
+XSS_PATTERNS = [
+    r"<script[^>]*>.*?</script>",
+    r"javascript:",
+    r"on\w+\s*=",
+    r"<iframe",
+    r"<object",
+    r"<embed",
+]
 
 
-# ============================================
-# RATE LIMITER
-# ============================================
-limiter = Limiter(
-    key_func=get_remote_address,
-    default_limits=[f"{settings.rate_limit_per_minute}/minute"],
-    enabled=settings.rate_limit_enabled,
-    storage_uri=settings.redis_url,
-    strategy="fixed-window",  # or "moving-window" for more accurate limiting
-)
-
-
-def setup_rate_limiter(app):
-    """Configure rate limiter for FastAPI app."""
-    app.state.limiter = limiter
-    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-    return limiter
-
-
-# ============================================
-# CORS MIDDLEWARE
-# ============================================
-def setup_cors(app):
-    """Configure CORS with secure defaults."""
-    
-    # In production, use explicit origins
-    if settings.is_production:
-        origins = settings.allowed_origins
-        allow_credentials = True
-        allow_all = False
-    else:
-        # Development: more permissive
-        origins = settings.allowed_origins + ["*"]
-        allow_credentials = True
-        allow_all = True
-    
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=origins if not allow_all else ["*"],
-        allow_credentials=allow_credentials,
-        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-        allow_headers=[
-            "*",
-            "Authorization",
-            "Content-Type",
-            "X-Requested-With",
-            "X-CSRF-Token",
-        ],
-        expose_headers=["X-Total-Count", "X-Page", "X-Per-Page"],
-        max_age=3600,  # Cache preflight requests for 1 hour
-    )
-    
-    print(f"✅ CORS configured - Origins: {origins}")
-
-
-# ============================================
-# SECURITY HEADERS MIDDLEWARE
-# ============================================
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """Add security headers to all responses."""
     
     async def dispatch(self, request: Request, call_next: Callable):
+        # Process request
         response = await call_next(request)
         
-        # Security headers
+        # Add security headers
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
         
-        # Permissions Policy (formerly Feature-Policy)
-        response.headers["Permissions-Policy"] = (
-            "geolocation=(), microphone=(), camera=()"
+        # Content Security Policy
+        csp = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
+            "style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data: https:; "
+            "font-src 'self' data:; "
+            "connect-src 'self' https://api.groq.com; "
+            "frame-ancestors 'none';"
         )
-        
-        # Content Security Policy (CSP)
-        if settings.is_production:
-            csp = (
-                "default-src 'self'; "
-                "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
-                "style-src 'self' 'unsafe-inline'; "
-                "img-src 'self' data: https:; "
-                "font-src 'self' data:; "
-                "connect-src 'self' https://api.groq.com; "
-                "frame-ancestors 'none';"
-            )
-            response.headers["Content-Security-Policy"] = csp
-        
-        # Strict Transport Security (HSTS) - only in production with HTTPS
-        if settings.is_production:
-            response.headers["Strict-Transport-Security"] = (
-                "max-age=31536000; includeSubDomains; preload"
-            )
+        response.headers["Content-Security-Policy"] = csp
         
         return response
 
 
-# ============================================
-# REQUEST TIMING MIDDLEWARE
-# ============================================
-class RequestTimingMiddleware(BaseHTTPMiddleware):
-    """Log request duration for monitoring."""
+class RequestSizeLimitMiddleware(BaseHTTPMiddleware):
+    """Limit request body size to prevent DoS attacks."""
     
     async def dispatch(self, request: Request, call_next: Callable):
-        start_time = time.time()
-        
-        response = await call_next(request)
-        
-        process_time = time.time() - start_time
-        response.headers["X-Process-Time"] = f"{process_time:.4f}"
-        
-        # Log slow requests
-        if process_time > 1.0:  # Slower than 1 second
-            print(f"⚠️  Slow request: {request.method} {request.url.path} - {process_time:.2f}s")
-        
-        return response
-
-
-# ============================================
-# INPUT SANITIZATION
-# ============================================
-class InputSanitizer:
-    """Sanitize user input to prevent injection attacks."""
-    
-    # Dangerous patterns
-    SQL_INJECTION_PATTERNS = [
-        r"(\b(SELECT|INSERT|UPDATE|DELETE|DROP|CREATE|ALTER|EXEC)\b)",
-        r"(--|#|/\*|\*/)",
-        r"(\bOR\b.*=.*)",
-        r"(\bAND\b.*=.*)",
-        r"(\bUNION\b.*\bSELECT\b)",
-    ]
-    
-    XSS_PATTERNS = [
-        r"<script[^>]*>.*?</script>",
-        r"javascript:",
-        r"onerror\s*=",
-        r"onload\s*=",
-        r"<iframe[^>]*>",
-    ]
-    
-    @staticmethod
-    def sanitize_string(text: str, max_length: int = 1000) -> str:
-        """Sanitize string input."""
-        if not text:
-            return text
-        
-        # Truncate
-        text = text[:max_length]
-        
-        # HTML escape
-        text = html.escape(text)
-        
-        # Remove null bytes
-        text = text.replace('\x00', '')
-        
-        # Normalize whitespace
-        text = ' '.join(text.split())
-        
-        return text
-    
-    @classmethod
-    def detect_sql_injection(cls, text: str) -> bool:
-        """Detect potential SQL injection attempts."""
-        for pattern in cls.SQL_INJECTION_PATTERNS:
-            if re.search(pattern, text, re.IGNORECASE):
-                return True
-        return False
-    
-    @classmethod
-    def detect_xss(cls, text: str) -> bool:
-        """Detect potential XSS attempts."""
-        for pattern in cls.XSS_PATTERNS:
-            if re.search(pattern, text, re.IGNORECASE):
-                return True
-        return False
-    
-    @classmethod
-    def validate_input(cls, text: str, field_name: str = "input") -> str:
-        """Validate and sanitize input."""
-        if not text:
-            return text
-        
-        # Check for attacks
-        if cls.detect_sql_injection(text):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid {field_name}: potential SQL injection detected"
-            )
-        
-        if cls.detect_xss(text):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid {field_name}: potential XSS detected"
-            )
-        
-        # Sanitize
-        return cls.sanitize_string(text)
-
-
-# ============================================
-# REQUEST VALIDATION MIDDLEWARE
-# ============================================
-class RequestValidationMiddleware(BaseHTTPMiddleware):
-    """Validate incoming requests."""
-    
-    async def dispatch(self, request: Request, call_next: Callable):
-        # Check Content-Type for POST/PUT/PATCH
-        if request.method in ["POST", "PUT", "PATCH"]:
-            content_type = request.headers.get("content-type", "")
-            
-            if not content_type.startswith("application/json") and \
-               not content_type.startswith("multipart/form-data"):
-                return JSONResponse(
-                    status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-                    content={
-                        "detail": "Content-Type must be application/json or multipart/form-data"
-                    }
-                )
-        
-        # Check request size (prevent DoS)
+        # Check content length
         content_length = request.headers.get("content-length")
+        
         if content_length:
-            if int(content_length) > 10 * 1024 * 1024:  # 10MB limit
+            content_length = int(content_length)
+            if content_length > MAX_REQUEST_SIZE:
+                logger.warning(
+                    f"Request size too large: {content_length} bytes from {request.client.host}"
+                )
                 return JSONResponse(
                     status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                    content={"detail": "Request body too large (max 10MB)"}
+                    content={
+                        "error": "Request body too large",
+                        "max_size": f"{MAX_REQUEST_SIZE / 1024 / 1024} MB"
+                    }
                 )
         
         return await call_next(request)
 
 
-# ============================================
-# ERROR HANDLER
-# ============================================
-async def custom_http_exception_handler(request: Request, exc: HTTPException):
-    """Custom error handler for better error messages."""
+class InputSanitizationMiddleware(BaseHTTPMiddleware):
+    """Sanitize and validate input to prevent injection attacks."""
     
-    # Log error (don't expose internal details in production)
-    if settings.is_production:
-        detail = exc.detail if exc.status_code < 500 else "Internal server error"
-    else:
-        detail = exc.detail
+    def _check_sql_injection(self, text: str) -> bool:
+        """Check if text contains SQL injection patterns."""
+        text_lower = text.lower()
+        for pattern in SQL_INJECTION_PATTERNS:
+            if re.search(pattern, text_lower, re.IGNORECASE):
+                return True
+        return False
     
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={
-            "error": {
-                "status": exc.status_code,
-                "message": detail,
-                "timestamp": int(time.time()),
+    def _check_xss(self, text: str) -> bool:
+        """Check if text contains XSS patterns."""
+        for pattern in XSS_PATTERNS:
+            if re.search(pattern, text, re.IGNORECASE):
+                return True
+        return False
+    
+    def _sanitize_dict(self, data: dict) -> dict:
+        """Recursively sanitize dictionary values."""
+        sanitized = {}
+        for key, value in data.items():
+            if isinstance(value, str):
+                # Check for injection attacks
+                if self._check_sql_injection(value):
+                    logger.warning(f"SQL injection attempt detected in field '{key}'")
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Invalid input: Potential SQL injection detected"
+                    )
+                
+                if self._check_xss(value):
+                    logger.warning(f"XSS attempt detected in field '{key}'")
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Invalid input: Potential XSS detected"
+                    )
+                
+                # HTML escape for safety
+                sanitized[key] = escape(value)
+            elif isinstance(value, dict):
+                sanitized[key] = self._sanitize_dict(value)
+            elif isinstance(value, list):
+                sanitized[key] = [
+                    self._sanitize_dict(item) if isinstance(item, dict)
+                    else escape(item) if isinstance(item, str)
+                    else item
+                    for item in value
+                ]
+            else:
+                sanitized[key] = value
+        
+        return sanitized
+    
+    async def dispatch(self, request: Request, call_next: Callable):
+        # Only process POST, PUT, PATCH requests with JSON body
+        if request.method in ["POST", "PUT", "PATCH"]:
+            content_type = request.headers.get("content-type", "")
+            
+            if "application/json" in content_type:
+                try:
+                    # Read and parse body
+                    body = await request.body()
+                    if body:
+                        import json
+                        data = json.loads(body)
+                        
+                        # Sanitize input
+                        sanitized_data = self._sanitize_dict(data)
+                        
+                        # Replace request body with sanitized version
+                        request._body = json.dumps(sanitized_data).encode()
+                
+                except json.JSONDecodeError:
+                    logger.error("Invalid JSON in request body")
+                    return JSONResponse(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        content={"error": "Invalid JSON format"}
+                    )
+                except HTTPException as e:
+                    return JSONResponse(
+                        status_code=e.status_code,
+                        content={"error": e.detail}
+                    )
+                except Exception as e:
+                    logger.error(f"Error sanitizing input: {e}")
+        
+        return await call_next(request)
+
+
+class RequestLoggingMiddleware(BaseHTTPMiddleware):
+    """Log all requests for security monitoring."""
+    
+    async def dispatch(self, request: Request, call_next: Callable):
+        start_time = time.time()
+        
+        # Log request
+        logger.info(
+            f"Request started: {request.method} {request.url.path}",
+            extra={
+                "method": request.method,
+                "path": request.url.path,
+                "client": request.client.host if request.client else "unknown",
+                "user_agent": request.headers.get("user-agent", "unknown"),
             }
-        },
+        )
+        
+        # Process request
+        response = await call_next(request)
+        
+        # Calculate duration
+        duration = time.time() - start_time
+        
+        # Log response
+        logger.info(
+            f"Request completed: {request.method} {request.url.path} - {response.status_code} - {duration:.3f}s",
+            extra={
+                "method": request.method,
+                "path": request.url.path,
+                "status_code": response.status_code,
+                "duration": duration,
+                "client": request.client.host if request.client else "unknown",
+            }
+        )
+        
+        return response
+
+
+def sanitize_search_query(query: str, max_length: int = 200) -> str:
+    """
+    Sanitize search query to prevent injection attacks.
+    
+    Args:
+        query: Raw search query
+        max_length: Maximum allowed length
+    
+    Returns:
+        Sanitized query string
+    
+    Raises:
+        ValueError: If query is invalid or dangerous
+    """
+    if not query or not isinstance(query, str):
+        raise ValueError("Query must be a non-empty string")
+    
+    # Trim whitespace
+    query = query.strip()
+    
+    # Check length
+    if len(query) > max_length:
+        raise ValueError(f"Query too long (max {max_length} characters)")
+    
+    # Check for SQL injection
+    query_lower = query.lower()
+    for pattern in SQL_INJECTION_PATTERNS:
+        if re.search(pattern, query_lower, re.IGNORECASE):
+            raise ValueError("Invalid query: Potential SQL injection detected")
+    
+    # Remove potentially dangerous characters
+    # Allow: letters, numbers, spaces, and basic punctuation
+    sanitized = re.sub(r'[^\w\s\-.,!?äöüßÄÖÜ]', '', query)
+    
+    return sanitized
+
+
+def validate_url(url: str) -> bool:
+    """
+    Validate URL to prevent SSRF attacks.
+    
+    Args:
+        url: URL to validate
+    
+    Returns:
+        True if URL is valid and safe
+    """
+    if not url:
+        return False
+    
+    # Check URL format
+    url_pattern = re.compile(
+        r'^https?://'  # http:// or https://
+        r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,6}\.?|'  # domain
+        r'localhost|'  # localhost
+        r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'  # or IP
+        r'(?::\d+)?'  # optional port
+        r'(?:/?|[/?]\S+)$', re.IGNORECASE
     )
-
-
-# ============================================
-# SETUP ALL SECURITY MIDDLEWARE
-# ============================================
-def setup_security(app):
-    """Configure all security middleware."""
     
-    # 1. CORS
-    setup_cors(app)
+    if not url_pattern.match(url):
+        return False
     
-    # 2. Rate Limiting
-    setup_rate_limiter(app)
+    # Prevent access to private IP ranges
+    private_ip_patterns = [
+        r'localhost',
+        r'127\.',
+        r'192\.168\.',
+        r'10\.',
+        r'172\.(1[6-9]|2[0-9]|3[0-1])\.',
+        r'169\.254\.',
+    ]
     
-    # 3. Security Headers
-    app.add_middleware(SecurityHeadersMiddleware)
+    for pattern in private_ip_patterns:
+        if re.search(pattern, url, re.IGNORECASE):
+            return False
     
-    # 4. Request Timing
-    app.add_middleware(RequestTimingMiddleware)
-    
-    # 5. Request Validation
-    app.add_middleware(RequestValidationMiddleware)
-    
-    # 6. Custom error handler
-    app.add_exception_handler(HTTPException, custom_http_exception_handler)
-    
-    print("✅ Security middleware configured")
-    print(f"   - Rate limiting: {settings.rate_limit_per_minute}/min")
-    print(f"   - CORS origins: {len(settings.allowed_origins)} configured")
-    print(f"   - Input sanitization: enabled")
-    print(f"   - Security headers: enabled")
+    return True
