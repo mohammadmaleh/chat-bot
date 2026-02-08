@@ -3,6 +3,7 @@ from prisma import Prisma
 from prisma.models import Product, Price, Store
 from contextlib import asynccontextmanager
 import logging
+from lib.cache import cache
 
 logger = logging.getLogger(__name__)
 
@@ -32,14 +33,23 @@ async def disconnect_db():
         logger.info("👋 Database disconnected")
 
 # ==================
-# PRODUCT QUERIES
+# PRODUCT QUERIES WITH CACHING
 # ==================
 
 async def search_products(query: str, limit: int = 5) -> List[Dict[str, Any]]:
     """
     Search products by name, brand, category, or description.
-    Uses Prisma's type-safe queries with full-text search.
+    Uses Redis caching with 10-minute TTL.
     """
+    # Check cache first
+    cache_key = cache.cache_key("search", query=query, limit=limit)
+    cached_result = await cache.get(cache_key)
+    if cached_result:
+        logger.info(f"Cache HIT: search '{query}'")
+        return cached_result
+    
+    logger.info(f"Cache MISS: search '{query}' - querying database")
+    
     try:
         products = await prisma.product.find_many(
             where={
@@ -66,7 +76,6 @@ async def search_products(query: str, limit: int = 5) -> List[Dict[str, Any]]:
         # Transform to dict with JSON-serializable fields
         result = []
         for product in products:
-            # FIXED: Manually construct dict to control datetime serialization
             product_dict = {
                 'id': product.id,
                 'name': product.name,
@@ -90,6 +99,9 @@ async def search_products(query: str, limit: int = 5) -> List[Dict[str, Any]]:
             
             result.append(product_dict)
         
+        # Cache result for 10 minutes
+        await cache.set(cache_key, result, ttl=600)
+        
         return result
     
     except Exception as e:
@@ -99,8 +111,15 @@ async def search_products(query: str, limit: int = 5) -> List[Dict[str, Any]]:
 async def get_product_prices(product_id: str) -> List[Dict[str, Any]]:
     """
     Get all prices for a specific product across stores.
-    Sorted by price (cheapest first).
+    Cached for 30 minutes.
     """
+    # Check cache
+    cache_key = cache.cache_key("prices", product_id=product_id)
+    cached_result = await cache.get(cache_key)
+    if cached_result:
+        logger.debug(f"Cache HIT: prices for {product_id}")
+        return cached_result
+    
     try:
         prices = await prisma.price.find_many(
             where={'productId': product_id},
@@ -108,7 +127,7 @@ async def get_product_prices(product_id: str) -> List[Dict[str, Any]]:
             order_by={'price': 'asc'}
         )
         
-        return [
+        result = [
             {
                 'price': float(p.price),
                 'currency': p.currency,
@@ -121,6 +140,11 @@ async def get_product_prices(product_id: str) -> List[Dict[str, Any]]:
             }
             for p in prices
         ]
+        
+        # Cache for 30 minutes
+        await cache.set(cache_key, result, ttl=1800)
+        
+        return result
     
     except Exception as e:
         logger.error(f"Error fetching prices for product {product_id}: {e}")
@@ -132,8 +156,15 @@ async def get_cheapest_products(
 ) -> List[Dict[str, Any]]:
     """
     Get products with their cheapest available prices.
-    Optionally filter by category.
+    Cached for 1 hour.
     """
+    # Check cache
+    cache_key = cache.cache_key("cheapest", category=category or "all", limit=limit)
+    cached_result = await cache.get(cache_key)
+    if cached_result:
+        logger.debug(f"Cache HIT: cheapest products")
+        return cached_result
+    
     try:
         where_clause = {'prices': {'some': {'availability': True}}}
         
@@ -171,6 +202,9 @@ async def get_cheapest_products(
                     'url': cheapest.url
                 })
         
+        # Cache for 1 hour
+        await cache.set(cache_key, result, ttl=3600)
+        
         return result
     
     except Exception as e:
@@ -191,6 +225,10 @@ async def create_conversation(user_id: str, title: Optional[str] = None) -> Dict
                 'status': 'ACTIVE'
             }
         )
+        
+        # Invalidate user's conversation list cache
+        await cache.delete_pattern(f"conversations:user:{user_id}:*")
+        
         return {
             'id': conversation.id,
             'userId': conversation.userId,
@@ -219,6 +257,10 @@ async def save_message(
                 'metadata': metadata
             }
         )
+        
+        # Invalidate conversation cache
+        await cache.delete(f"conversation:{conversation_id}:messages")
+        
         return {
             'id': message.id,
             'conversationId': message.conversationId,
@@ -235,7 +277,13 @@ async def get_conversation_history(
     conversation_id: str,
     limit: int = 50
 ) -> List[Dict[str, Any]]:
-    """Get message history for a conversation"""
+    """Get message history for a conversation (cached)"""
+    # Check cache
+    cache_key = f"conversation:{conversation_id}:messages"
+    cached_result = await cache.get(cache_key)
+    if cached_result:
+        return cached_result
+    
     try:
         messages = await prisma.message.find_many(
             where={'conversationId': conversation_id},
@@ -243,7 +291,7 @@ async def get_conversation_history(
             take=limit
         )
         
-        return [
+        result = [
             {
                 'role': m.role.lower(),
                 'content': m.content,
@@ -252,6 +300,11 @@ async def get_conversation_history(
             }
             for m in messages
         ]
+        
+        # Cache for 5 minutes
+        await cache.set(cache_key, result, ttl=300)
+        
+        return result
     except Exception as e:
         logger.error(f"Error fetching conversation history: {e}")
         return []
