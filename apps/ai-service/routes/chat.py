@@ -1,18 +1,24 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 from models.schemas import ChatRequest, ChatResponse, ProductSearchRequest, ProductSearchResponse
 from lib.ai_client import chat_with_context, chat_with_streaming, extract_search_intent
 from lib.database import search_products, get_product_prices, get_cheapest_products
 import json
+import logging
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/chat", tags=["chat"])
+limiter = Limiter(key_func=get_remote_address)
 
 @router.post("/", response_model=ChatResponse)
-async def chat(request: ChatRequest):
-    """Main chat endpoint with product search integration"""
+@limiter.limit("20/minute")
+async def chat(request: Request, chat_request: ChatRequest):
+    """Main chat endpoint with product search integration."""
     try:
         # Extract user intent using AI
-        intent_data = extract_search_intent(request.message)
+        intent_data = extract_search_intent(chat_request.message)
         
         product_context = None
         products = []
@@ -21,12 +27,10 @@ async def chat(request: ChatRequest):
         if intent_data.get("intent") in ["search", "gift", "compare"]:
             search_query = intent_data.get("search_query", "")
             if search_query:
-                # FIXED: Added await
                 products = await search_products(search_query, limit=5)
                 
                 # Get prices for each product
                 for product in products:
-                    # FIXED: Added await
                     prices = await get_product_prices(product['id'])
                     product['prices'] = prices
                     if prices:
@@ -45,12 +49,12 @@ async def chat(request: ChatRequest):
         # Build conversation history
         conversation_history = [
             {"role": msg.role, "content": msg.content} 
-            for msg in request.conversation_history
-        ] if request.conversation_history else []
+            for msg in chat_request.conversation_history
+        ] if chat_request.conversation_history else []
         
         # Get AI response
         ai_response = chat_with_context(
-            request.message,
+            chat_request.message,
             conversation_history,
             product_context
         )
@@ -63,28 +67,27 @@ async def chat(request: ChatRequest):
         )
     
     except Exception as e:
-        print(f"Chat error: {e}")
+        logger.error(f"Chat error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/stream")
-async def chat_stream(request: ChatRequest):
-    """Streaming chat endpoint for real-time responses"""
+@limiter.limit("20/minute")
+async def chat_stream(request: Request, chat_request: ChatRequest):
+    """Streaming chat endpoint for real-time responses."""
     async def generate():
         try:
             # Extract intent
-            intent_data = extract_search_intent(request.message)
+            intent_data = extract_search_intent(chat_request.message)
             product_context = None
             
             # Search products if needed
             if intent_data.get("intent") in ["search", "gift", "compare"]:
                 search_query = intent_data.get("search_query", "")
                 if search_query:
-                    # FIXED: Added await
                     products = await search_products(search_query, limit=5)
                     
                     # Get prices
                     for product in products:
-                        # FIXED: Added await
                         prices = await get_product_prices(product['id'])
                         product['prices'] = prices
                     
@@ -103,30 +106,30 @@ async def chat_stream(request: ChatRequest):
             # Build conversation history
             conversation_history = [
                 {"role": msg.role, "content": msg.content} 
-                for msg in request.conversation_history
-            ] if request.conversation_history else []
+                for msg in chat_request.conversation_history
+            ] if chat_request.conversation_history else []
             
             # Stream AI response
-            for chunk in chat_with_streaming(request.message, conversation_history, product_context):
+            for chunk in chat_with_streaming(chat_request.message, conversation_history, product_context):
                 yield f"data: {json.dumps({'type': 'message', 'content': chunk})}\n\n"
             
             yield "data: [DONE]\n\n"
         
         except Exception as e:
+            logger.error(f"Streaming error: {e}")
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
     
     return StreamingResponse(generate(), media_type="text/event-stream")
 
 @router.post("/search", response_model=ProductSearchResponse)
-async def search_products_endpoint(request: ProductSearchRequest):
-    """Direct product search endpoint"""
+@limiter.limit("30/minute")
+async def search_products_endpoint(request: Request, search_request: ProductSearchRequest):
+    """Direct product search endpoint."""
     try:
-        # FIXED: Added await
-        products = await search_products(request.query, request.limit)
+        products = await search_products(search_request.query, search_request.limit)
         
         # Get prices for each product
         for product in products:
-            # FIXED: Added await
             prices = await get_product_prices(product['id'])
             product['prices'] = prices
             if prices:
@@ -138,14 +141,14 @@ async def search_products_endpoint(request: ProductSearchRequest):
             count=len(products)
         )
     except Exception as e:
-        print(f"Search error: {e}")
+        logger.error(f"Search error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/cheapest")
-async def get_cheapest_endpoint(category: str = None, limit: int = 10):
-    """Get cheapest products, optionally filtered by category"""
+@limiter.limit("30/minute")
+async def get_cheapest_endpoint(request: Request, category: str = None, limit: int = 10):
+    """Get cheapest products, optionally filtered by category."""
     try:
-        # FIXED: Added await
         products = await get_cheapest_products(category=category, limit=limit)
         
         return {
@@ -154,5 +157,5 @@ async def get_cheapest_endpoint(category: str = None, limit: int = 10):
             "count": len(products)
         }
     except Exception as e:
-        print(f"Cheapest products error: {e}")
+        logger.error(f"Cheapest products error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
