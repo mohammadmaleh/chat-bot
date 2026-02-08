@@ -4,14 +4,13 @@ import { Badge } from "../badge"
 import { Bot, User, Copy, Check } from "lucide-react"
 import { formatDate } from "../../lib/utils"
 import { motion } from "framer-motion"
-import { Button } from "../button"
 
 interface ChatMessageProps {
   role: "user" | "assistant"
   content: string
   timestamp?: Date | string
   userName?: string
-  streaming?: boolean
+  enableTypewriter?: boolean
 }
 
 export function ChatMessage({
@@ -19,85 +18,69 @@ export function ChatMessage({
   content,
   timestamp,
   userName = "You",
-  streaming = false,
+  enableTypewriter = false,
 }: ChatMessageProps) {
   const isUser = role === "user"
-  const [copied, setCopied] = React.useState(false)
-  const [displayedContent, setDisplayedContent] = React.useState("")
-  const [isAnimating, setIsAnimating] = React.useState(streaming)
+  const [displayedContent, setDisplayedContent] = React.useState(enableTypewriter && !isUser ? "" : content)
+  const [isCopied, setIsCopied] = React.useState(false)
+  const [isHovered, setIsHovered] = React.useState(false)
 
-  // Character-by-character streaming animation
+  // Typewriter effect for assistant messages
   React.useEffect(() => {
-    if (streaming && !isUser) {
-      setIsAnimating(true)
-      let currentIndex = 0
+    if (enableTypewriter && !isUser && content) {
+      let index = 0
       const interval = setInterval(() => {
-        if (currentIndex < content.length) {
-          setDisplayedContent(content.slice(0, currentIndex + 1))
-          currentIndex++
+        if (index < content.length) {
+          setDisplayedContent(content.slice(0, index + 1))
+          index++
         } else {
-          setIsAnimating(false)
           clearInterval(interval)
         }
-      }, 20) // 20ms per character for smooth animation
+      }, 20) // Adjust speed here (lower = faster)
 
       return () => clearInterval(interval)
     } else {
       setDisplayedContent(content)
-      setIsAnimating(false)
     }
-  }, [content, streaming, isUser])
+  }, [content, enableTypewriter, isUser])
 
+  // Copy to clipboard
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(content)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
+      setIsCopied(true)
+      setTimeout(() => setIsCopied(false), 2000)
     } catch (err) {
       console.error('Failed to copy:', err)
     }
   }
 
-  const messageVariants = {
-    initial: { opacity: 0, y: 10, scale: 0.95 },
-    animate: {
-      opacity: 1,
-      y: 0,
-      scale: 1,
-      transition: {
-        type: "spring",
-        stiffness: 500,
-        damping: 30
-      }
-    },
-    exit: { opacity: 0, scale: 0.95 }
-  }
-
-  const avatarVariants = {
-    initial: { scale: 0, rotate: -180 },
-    animate: {
-      scale: 1,
-      rotate: 0,
-      transition: {
-        type: "spring",
-        stiffness: 300,
-        damping: 20
-      }
-    }
-  }
-
   return (
     <motion.div
-      variants={messageVariants}
-      initial="initial"
-      animate="animate"
-      exit="exit"
+      initial={{ opacity: 0, y: 20, scale: 0.95 }}
+      animate={{ opacity: 1, y: 0, scale: 1 }}
+      transition={{
+        type: "spring",
+        stiffness: 500,
+        damping: 30,
+      }}
+      onHoverStart={() => setIsHovered(true)}
+      onHoverEnd={() => setIsHovered(false)}
       className={`flex gap-3 ${isUser ? "justify-end" : "justify-start"} group`}
     >
       {!isUser && (
-        <motion.div variants={avatarVariants}>
-          <Avatar className="h-8 w-8 border-2 border-primary/20 shadow-sm">
-            <AvatarFallback className="bg-gradient-to-br from-primary/20 to-primary/10">
+        <motion.div
+          initial={{ scale: 0, rotate: -180 }}
+          animate={{ scale: 1, rotate: 0 }}
+          transition={{
+            type: "spring",
+            stiffness: 260,
+            damping: 20,
+            delay: 0.1,
+          }}
+        >
+          <Avatar className="h-8 w-8 border-2 border-primary/20 ring-2 ring-transparent group-hover:ring-primary/10 transition-all">
+            <AvatarFallback className="bg-gradient-to-br from-primary/20 to-purple-500/20">
               <Bot className="h-4 w-4 text-primary" />
             </AvatarFallback>
           </Avatar>
@@ -105,15 +88,17 @@ export function ChatMessage({
       )}
 
       <div className={`flex flex-col gap-1 max-w-[80%] ${isUser ? "items-end" : "items-start"}`}>
-        {/* Header */}
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={{ delay: 0.1 }}
+          transition={{ delay: 0.2 }}
           className="flex items-center gap-2"
         >
           {!isUser && (
-            <Badge variant="secondary" className="text-xs font-medium">
+            <Badge 
+              variant="secondary" 
+              className="text-xs bg-gradient-to-r from-primary/10 to-purple-500/10 border-primary/20"
+            >
               🤖 AI Assistant
             </Badge>
           )}
@@ -124,73 +109,67 @@ export function ChatMessage({
           )}
         </motion.div>
 
-        {/* Message Bubble */}
         <motion.div
-          whileHover={{ scale: 1.01 }}
-          transition={{ duration: 0.2 }}
-          className={`relative rounded-2xl px-4 py-3 shadow-sm ${
-            isUser
-              ? "bg-gradient-to-br from-primary to-primary/90 text-primary-foreground"
-              : "bg-muted/50 backdrop-blur-sm border border-border/50"
-          }`}
+          initial={{ scale: 0.9, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ delay: 0.1 }}
+          className="relative group/message"
         >
-          <div className="text-sm whitespace-pre-wrap leading-relaxed">
-            {displayedContent}
-            {isAnimating && (
-              <motion.span
-                animate={{ opacity: [1, 0] }}
-                transition={{ duration: 0.5, repeat: Infinity }}
-                className="inline-block w-1 h-4 ml-1 bg-current"
-              />
-            )}
+          <div
+            className={`rounded-2xl px-4 py-3 transition-all duration-200 ${
+              isUser
+                ? "bg-gradient-to-r from-primary to-primary/90 text-primary-foreground shadow-lg hover:shadow-xl"
+                : "bg-muted hover:bg-muted/80 shadow-sm hover:shadow-md"
+            }`}
+          >
+            <div className="text-sm whitespace-pre-wrap leading-relaxed">
+              {displayedContent}
+              {enableTypewriter && !isUser && displayedContent.length < content.length && (
+                <motion.span
+                  animate={{ opacity: [1, 0] }}
+                  transition={{ duration: 0.5, repeat: Infinity }}
+                  className="inline-block w-1 h-4 bg-current ml-0.5 align-middle"
+                />
+              )}
+            </div>
           </div>
 
-          {/* Copy Button - Shows on hover for assistant messages */}
-          {!isUser && !isAnimating && (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.8 }}
-              whileHover={{ opacity: 1, scale: 1 }}
-              className="absolute -right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity"
-            >
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-7 w-7 rounded-lg bg-background/80 backdrop-blur-sm shadow-sm hover:shadow-md"
-                onClick={handleCopy}
-              >
-                {copied ? (
-                  <Check className="h-3 w-3 text-green-500" />
-                ) : (
-                  <Copy className="h-3 w-3" />
-                )}
-              </Button>
-            </motion.div>
-          )}
-        </motion.div>
-
-        {/* Reaction Area (Future Enhancement) */}
-        {!isUser && !isAnimating && (
-          <motion.div
-            initial={{ opacity: 0, y: -5 }}
-            animate={{ opacity: 0, y: 0 }}
-            whileHover={{ opacity: 1 }}
-            className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
+          {/* Copy button - appears on hover */}
+          <motion.button
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ 
+              opacity: isHovered ? 1 : 0,
+              scale: isHovered ? 1 : 0.8,
+            }}
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
+            onClick={handleCopy}
+            className={`absolute ${isUser ? 'left-2' : 'right-2'} top-2 p-1.5 rounded-md 
+                       bg-background/80 backdrop-blur-sm shadow-md hover:bg-background 
+                       transition-colors pointer-events-auto`}
+            aria-label="Copy message"
           >
-            {['👍', '👎', '❤️'].map((emoji, idx) => (
-              <button
-                key={idx}
-                className="text-xs hover:scale-125 transition-transform duration-200 p-1 rounded hover:bg-muted/50"
-              >
-                {emoji}
-              </button>
-            ))}
-          </motion.div>
-        )}
+            {isCopied ? (
+              <Check className="h-3 w-3 text-green-500" />
+            ) : (
+              <Copy className="h-3 w-3 text-muted-foreground" />
+            )}
+          </motion.button>
+        </motion.div>
       </div>
 
       {isUser && (
-        <motion.div variants={avatarVariants}>
-          <Avatar className="h-8 w-8 border-2 border-primary shadow-sm">
+        <motion.div
+          initial={{ scale: 0, rotate: 180 }}
+          animate={{ scale: 1, rotate: 0 }}
+          transition={{
+            type: "spring",
+            stiffness: 260,
+            damping: 20,
+            delay: 0.1,
+          }}
+        >
+          <Avatar className="h-8 w-8 border-2 border-primary ring-2 ring-transparent group-hover:ring-primary/20 transition-all">
             <AvatarFallback className="bg-gradient-to-br from-primary to-primary/80 text-primary-foreground">
               <User className="h-4 w-4" />
             </AvatarFallback>
