@@ -2,10 +2,10 @@ import * as React from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../card"
 import { Badge } from "../badge"
 import { formatPrice } from "../../lib/utils"
-import { ExternalLink, TrendingDown } from "lucide-react"
+import { ExternalLink, TrendingDown, AlertCircle } from "lucide-react"
 
 interface Price {
-  price: string
+  price: string | number
   currency: string
   availability: boolean
   url: string
@@ -20,10 +20,10 @@ interface Product {
   brand: string
   category: string
   description?: string
-  image_url?: string
+  imageUrl?: string
   prices: Price[]
-  cheapest_price?: string
-  most_expensive?: string
+  cheapest_price?: number
+  most_expensive?: number
 }
 
 interface ProductCardProps {
@@ -31,15 +31,44 @@ interface ProductCardProps {
 }
 
 export function ProductCard({ product }: ProductCardProps) {
+  // Handle empty prices array
+  if (!product.prices || product.prices.length === 0) {
+    return (
+      <Card className="overflow-hidden">
+        <CardHeader className="pb-3">
+          <div className="flex items-start justify-between gap-4">
+            <div className="flex-1">
+              <CardTitle className="text-lg">{product.name}</CardTitle>
+              <CardDescription className="mt-1">
+                {product.brand} • {product.category}
+              </CardDescription>
+            </div>
+            {product.imageUrl && (
+              <img
+                src={product.imageUrl}
+                alt={product.name}
+                className="w-16 h-16 object-cover rounded-lg"
+              />
+            )}
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center gap-2 text-sm text-muted-foreground bg-muted/50 rounded-lg p-3">
+            <AlertCircle className="h-4 w-4" />
+            <span>Price information not available</span>
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
+
   const cheapestPrice = product.prices.reduce((min, p) => 
-    parseFloat(p.price) < parseFloat(min.price) ? p : min
+    parseFloat(String(p.price)) < parseFloat(String(min.price)) ? p : min
   )
 
   const savingsPercent = product.most_expensive && product.cheapest_price
     ? Math.round(
-        ((parseFloat(product.most_expensive) - parseFloat(product.cheapest_price)) /
-          parseFloat(product.most_expensive)) *
-          100
+        ((product.most_expensive - product.cheapest_price) / product.most_expensive) * 100
       )
     : 0
 
@@ -53,9 +82,9 @@ export function ProductCard({ product }: ProductCardProps) {
               {product.brand} • {product.category}
             </CardDescription>
           </div>
-          {product.image_url && (
+          {product.imageUrl && (
             <img
-              src={product.image_url}
+              src={product.imageUrl}
               alt={product.name}
               className="w-16 h-16 object-cover rounded-lg"
             />
@@ -80,7 +109,7 @@ export function ProductCard({ product }: ProductCardProps) {
           <div className="flex items-end justify-between">
             <div>
               <div className="text-2xl font-bold text-green-700 dark:text-green-400">
-                {formatPrice(cheapestPrice.price, cheapestPrice.currency)}
+                {formatPrice(String(cheapestPrice.price), cheapestPrice.currency)}
               </div>
               <div className="text-xs text-muted-foreground">
                 at {cheapestPrice.store_name}
@@ -119,7 +148,7 @@ export function ProductCard({ product }: ProductCardProps) {
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="font-semibold">
-                    {formatPrice(price.price, price.currency)}
+                    {formatPrice(String(price.price), price.currency)}
                   </span>
                   {!price.availability && (
                     <Badge variant="destructive" className="text-xs">
@@ -136,6 +165,13 @@ export function ProductCard({ product }: ProductCardProps) {
             </div>
           )}
         </div>
+
+        {/* Product Description */}
+        {product.description && (
+          <div className="text-sm text-muted-foreground pt-2 border-t">
+            {product.description}
+          </div>
+        )}
       </CardContent>
     </Card>
   )
