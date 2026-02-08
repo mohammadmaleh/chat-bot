@@ -6,6 +6,8 @@ import { config } from 'dotenv';
 import { storesRoutes } from './routes/stores.js';
 import { productsRoutes } from './routes/products.js';
 import { conversationsRoutes } from './routes/conversations.js';
+import { usersRoutes } from './routes/users.js';
+import { chatRoutes } from './routes/chat.js';
 
 config();
 
@@ -47,6 +49,9 @@ app.get('/', async () => {
 await app.register(storesRoutes, { prefix: '/api' });
 await app.register(productsRoutes, { prefix: '/api' });
 await app.register(conversationsRoutes, { prefix: '/api' });
+await app.register(usersRoutes, { prefix: '/api' });
+await app.register(chatRoutes, { prefix: '/api' });
+
 
 const start = async () => {
   try {
