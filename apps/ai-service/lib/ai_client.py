@@ -1,12 +1,9 @@
-from openai import OpenAI
+from groq import Groq
 from lib.config import settings
 from typing import List, Dict, Generator
 import json
 
-client = OpenAI(
-    api_key=settings.groq_api_key,
-    base_url="https://api.groq.com/openai/v1"
-)
+client = Groq(api_key=settings.groq_api_key)
 
 SYSTEM_PROMPT = """You are a helpful AI shopping assistant for a German price comparison platform.
 
