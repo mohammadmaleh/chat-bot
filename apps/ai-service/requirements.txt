@@ -1,83 +1,30 @@
-# ============================================
-# CORE FRAMEWORK
-# ============================================
-fastapi==0.115.0
-uvicorn[standard]==0.30.0
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+groq==0.4.1
+prisma==0.11.0
 pydantic==2.5.3
 pydantic-settings==2.1.0
 python-dotenv==1.0.0
+playwright==1.40.0
 
-# ============================================
-# AI & LLM
-# ============================================
-groq==0.9.0
+# Security & Rate Limiting
+slowapi==0.1.9
 
-# ============================================
-# DATABASE
-# ============================================
-psycopg2-binary==2.9.9
-prisma==0.13.1
-asyncpg==0.29.0  # Async PostgreSQL driver (alternative)
+# Caching
+redis==5.0.1
 
-# ============================================
-# CACHING & QUEUES
-# ============================================
-redis==5.0.3
-celery[redis]==5.3.6
+# Testing
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-mock==3.12.0
+httpx==0.25.2
+pytest-cov==4.1.0
 
-# ============================================
-# SECURITY
-# ============================================
-slowapi==0.1.9              # Rate limiting
-pyjwt[crypto]==2.8.0        # JWT authentication
-passlib[bcrypt]==1.7.4      # Password hashing
-python-multipart==0.0.9     # Form data parsing
-itsdangerous==2.1.2         # Secure token signing
+# Background Jobs
+apscheduler==3.10.4
 
-# ============================================
-# SCRAPING & BROWSER AUTOMATION
-# ============================================
-playwright==1.43.0
-playwright-stealth==1.0.6
-beautifulsoup4==4.12.3
-fake-useragent==1.5.1
-tenacity==8.2.3             # Retry logic with exponential backoff
+# Monitoring & Error Tracking
+sentry-sdk[fastapi]==1.39.1
 
-# ============================================
-# MONITORING & LOGGING
-# ============================================
-sentry-sdk[fastapi]==1.40.0 # Error tracking
-structlog==24.1.0           # Structured logging
-prometheus-client==0.20.0   # Metrics
-
-# ============================================
-# UTILITIES
-# ============================================
-python-dateutil==2.9.0
-aiohttp==3.9.3              # Async HTTP client
-aiofiles==23.2.1            # Async file operations
-python-slugify==8.0.4       # URL-friendly slugs
-
-# ============================================
-# EMAIL (Optional)
-# ============================================
-sendgrid==6.11.0
-
-# ============================================
-# TESTING
-# ============================================
-pytest==8.3.3
-pytest-asyncio==0.23.5      # Async test support
-pytest-cov==4.1.0           # Code coverage
-pytest-mock==3.12.0         # Mocking
-httpx==0.27.2               # Testing HTTP client
-faker==24.1.0               # Fake data generation
-
-# ============================================
-# DEVELOPMENT TOOLS
-# ============================================
-black==24.2.0               # Code formatting
-ruff==0.3.0                 # Fast linting
-mypy==1.8.0                 # Type checking
-pre-commit==3.6.2           # Git hooks
-ipython==8.22.1             # Better REPL
+# Additional utilities
+python-multipart==0.0.6
