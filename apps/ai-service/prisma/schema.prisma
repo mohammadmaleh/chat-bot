@@ -1,0 +1,180 @@
+// Prisma Client for Python
+// This mirrors the main schema at packages/database/prisma/schema.prisma
+
+generator client {
+  provider                    = "prisma-client-py"
+  interface                   = "asyncio"
+  recursive_type_depth        = 5
+  enable_experimental_decimal = true
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// =====================
+// USER & AUTHENTICATION
+// =====================
+
+model User {
+  id            String         @id @default(cuid())
+  email         String         @unique
+  name          String?
+  passwordHash  String?        @map("password_hash")
+  
+  tier          SubscriptionTier @default(FREE)
+  
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+  
+  conversations Conversation[]
+  subscriptions Subscription[]
+  
+  @@map("users")
+}
+
+enum SubscriptionTier {
+  FREE
+  PRO
+  BUSINESS
+}
+
+// =====================
+// PRODUCTS & PRICES
+// =====================
+
+model Product {
+  id          String   @id @default(cuid())
+  name        String
+  brand       String?
+  category    String?
+  description String?  @db.Text
+  imageUrl    String?  @map("image_url")
+  ean         String?  @unique
+  gtin        String?
+  
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  
+  prices      Price[]
+  
+  @@map("products")
+}
+
+model Store {
+  id            String   @id @default(cuid())
+  name          String
+  domain        String   @unique
+  logoUrl       String?  @map("logo_url")
+  country       String   @default("DE")
+  active        Boolean  @default(true)
+  
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  
+  prices        Price[]
+  
+  @@map("stores")
+}
+
+model Price {
+  id           String   @id @default(cuid())
+  productId    String   @map("product_id")
+  storeId      String   @map("store_id")
+  
+  price        Decimal  @db.Decimal(10, 2)
+  currency     String   @default("EUR")
+  availability Boolean  @default(true)
+  url          String
+  
+  scrapedAt    DateTime @default(now()) @map("scraped_at")
+  
+  product      Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  store        Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  
+  @@index([productId])
+  @@index([storeId])
+  @@index([scrapedAt])
+  @@map("prices")
+}
+
+// =====================
+// CONVERSATIONS & AI
+// =====================
+
+model Conversation {
+  id        String            @id @default(cuid())
+  userId    String            @map("user_id")
+  title     String?
+  status    ConversationStatus @default(ACTIVE)
+  
+  createdAt DateTime          @default(now()) @map("created_at")
+  updatedAt DateTime          @updatedAt @map("updated_at")
+  
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages  Message[]
+  
+  @@index([userId])
+  @@map("conversations")
+}
+
+enum ConversationStatus {
+  ACTIVE
+  ARCHIVED
+  DELETED
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String       @map("conversation_id")
+  role           MessageRole
+  content        String       @db.Text
+  metadata       Json?
+  
+  createdAt      DateTime     @default(now()) @map("created_at")
+  
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  
+  @@index([conversationId])
+  @@map("messages")
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+}
+
+// =====================
+// PAYMENTS & SUBSCRIPTIONS
+// =====================
+
+model Subscription {
+  id                   String             @id @default(cuid())
+  userId               String             @map("user_id")
+  stripeSubscriptionId String?            @unique @map("stripe_subscription_id")
+  stripeCustomerId     String?            @map("stripe_customer_id")
+  
+  plan                 SubscriptionTier
+  status               SubscriptionStatus @default(ACTIVE)
+  
+  currentPeriodStart   DateTime?          @map("current_period_start")
+  currentPeriodEnd     DateTime?          @map("current_period_end")
+  canceledAt           DateTime?          @map("canceled_at")
+  
+  createdAt            DateTime           @default(now()) @map("created_at")
+  updatedAt            DateTime           @updatedAt @map("updated_at")
+  
+  user                 User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+  @@map("subscriptions")
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELED
+  PAST_DUE
+  UNPAID
+}

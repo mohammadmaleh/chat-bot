@@ -1,81 +1,231 @@
-import psycopg2
-from psycopg2.extras import RealDictCursor
-from contextlib import contextmanager
-from lib.config import settings
+from typing import List, Dict, Any, Optional
+from prisma import Prisma
+from prisma.models import Product, Price, Store
+from contextlib import asynccontextmanager
+import logging
 
-@contextmanager
-def get_db_connection():
-    conn = psycopg2.connect(settings.database_url)
+logger = logging.getLogger(__name__)
+
+# Global Prisma client
+prisma = Prisma()
+
+@asynccontextmanager
+async def get_prisma():
+    """Context manager for Prisma client lifecycle"""
+    if not prisma.is_connected():
+        await prisma.connect()
     try:
-        yield conn
-        conn.commit()
-    except Exception as e:
-        conn.rollback()
-        raise e
+        yield prisma
     finally:
-        conn.close()
+        pass  # Don't disconnect - reuse connection
 
-def search_products(query: str, limit: int = 5):
-    with get_db_connection() as conn:
-        with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            search_query = f"%{query}%"
-            cur.execute("""
-                SELECT 
-                    p.id, p.name, p.brand, p.category, 
-                    p.description, p.image_url, p.ean
-                FROM products p
-                WHERE 
-                    p.name ILIKE %s 
-                    OR p.brand ILIKE %s 
-                    OR p.category ILIKE %s
-                    OR p.description ILIKE %s
-                LIMIT %s
-            """, (search_query, search_query, search_query, search_query, limit))
-            return cur.fetchall()
+async def connect_db():
+    """Initialize database connection on startup"""
+    if not prisma.is_connected():
+        await prisma.connect()
+        logger.info("✅ Database connected")
 
-def get_product_prices(product_id: str):
-    with get_db_connection() as conn:
-        with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute("""
-                SELECT 
-                    pr.price, pr.currency, pr.availability, pr.url,
-                    pr.scraped_at,
-                    s.name as store_name, s.domain as store_domain,
-                    s.logo_url as store_logo
-                FROM prices pr
-                JOIN stores s ON pr.store_id = s.id
-                WHERE pr.product_id = %s
-                ORDER BY pr.price ASC
-            """, (product_id,))
-            return cur.fetchall()
+async def disconnect_db():
+    """Close database connection on shutdown"""
+    if prisma.is_connected():
+        await prisma.disconnect()
+        logger.info("👋 Database disconnected")
 
-def get_cheapest_products(category: str = None, limit: int = 10):
-    with get_db_connection() as conn:
-        with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            if category:
-                cur.execute("""
-                    SELECT DISTINCT ON (p.id)
-                        p.id, p.name, p.brand, p.category,
-                        pr.price, pr.currency,
-                        s.name as store_name, s.domain as store_domain
-                    FROM products p
-                    JOIN prices pr ON p.id = pr.product_id
-                    JOIN stores s ON pr.store_id = s.id
-                    WHERE p.category ILIKE %s AND pr.availability = true
-                    ORDER BY p.id, pr.price ASC
-                    LIMIT %s
-                """, (f"%{category}%", limit))
-            else:
-                cur.execute("""
-                    SELECT DISTINCT ON (p.id)
-                        p.id, p.name, p.brand, p.category,
-                        pr.price, pr.currency,
-                        s.name as store_name, s.domain as store_domain
-                    FROM products p
-                    JOIN prices pr ON p.id = pr.product_id
-                    JOIN stores s ON pr.store_id = s.id
-                    WHERE pr.availability = true
-                    ORDER BY p.id, pr.price ASC
-                    LIMIT %s
-                """, (limit,))
-            return cur.fetchall()
+# ==================
+# PRODUCT QUERIES
+# ==================
+
+async def search_products(query: str, limit: int = 5) -> List[Dict[str, Any]]:
+    """
+    Search products by name, brand, category, or description.
+    Uses Prisma's type-safe queries with full-text search.
+    """
+    try:
+        products = await prisma.product.find_many(
+            where={
+                'OR': [
+                    {'name': {'contains': query, 'mode': 'insensitive'}},
+                    {'brand': {'contains': query, 'mode': 'insensitive'}},
+                    {'category': {'contains': query, 'mode': 'insensitive'}},
+                    {'description': {'contains': query, 'mode': 'insensitive'}},
+                ]
+            },
+            take=limit,
+            include={
+                'prices': {
+                    'include': {
+                        'store': True
+                    },
+                    'order_by': {
+                        'price': 'asc'
+                    }
+                }
+            }
+        )
+        
+        # Transform to dict with computed fields
+        result = []
+        for product in products:
+            product_dict = product.dict()
+            
+            # Add price analytics
+            if product.prices:
+                prices = [float(p.price) for p in product.prices]
+                product_dict['cheapest_price'] = min(prices)
+                product_dict['most_expensive'] = max(prices)
+                product_dict['price_range'] = max(prices) - min(prices)
+                product_dict['available_stores'] = len(product.prices)
+            
+            result.append(product_dict)
+        
+        return result
+    
+    except Exception as e:
+        logger.error(f"Error searching products: {e}")
+        return []
+
+async def get_product_prices(product_id: str) -> List[Dict[str, Any]]:
+    """
+    Get all prices for a specific product across stores.
+    Sorted by price (cheapest first).
+    """
+    try:
+        prices = await prisma.price.find_many(
+            where={'productId': product_id},
+            include={'store': True},
+            order_by={'price': 'asc'}
+        )
+        
+        return [
+            {
+                'price': float(p.price),
+                'currency': p.currency,
+                'availability': p.availability,
+                'url': p.url,
+                'scraped_at': p.scrapedAt.isoformat(),
+                'store_name': p.store.name,
+                'store_domain': p.store.domain,
+                'store_logo': p.store.logoUrl
+            }
+            for p in prices
+        ]
+    
+    except Exception as e:
+        logger.error(f"Error fetching prices for product {product_id}: {e}")
+        return []
+
+async def get_cheapest_products(
+    category: Optional[str] = None, 
+    limit: int = 10
+) -> List[Dict[str, Any]]:
+    """
+    Get products with their cheapest available prices.
+    Optionally filter by category.
+    """
+    try:
+        where_clause = {'prices': {'some': {'availability': True}}}
+        
+        if category:
+            where_clause['category'] = {'contains': category, 'mode': 'insensitive'}
+        
+        products = await prisma.product.find_many(
+            where=where_clause,
+            take=limit,
+            include={
+                'prices': {
+                    'where': {'availability': True},
+                    'take': 1,
+                    'order_by': {'price': 'asc'},
+                    'include': {'store': True}
+                }
+            }
+        )
+        
+        # Transform and add computed fields
+        result = []
+        for product in products:
+            if product.prices:
+                cheapest = product.prices[0]
+                result.append({
+                    'id': product.id,
+                    'name': product.name,
+                    'brand': product.brand,
+                    'category': product.category,
+                    'image_url': product.imageUrl,
+                    'price': float(cheapest.price),
+                    'currency': cheapest.currency,
+                    'store_name': cheapest.store.name,
+                    'store_domain': cheapest.store.domain,
+                    'url': cheapest.url
+                })
+        
+        return result
+    
+    except Exception as e:
+        logger.error(f"Error fetching cheapest products: {e}")
+        return []
+
+# ==================
+# CONVERSATION QUERIES
+# ==================
+
+async def create_conversation(user_id: str, title: Optional[str] = None) -> Dict[str, Any]:
+    """Create a new conversation for a user"""
+    try:
+        conversation = await prisma.conversation.create(
+            data={
+                'userId': user_id,
+                'title': title or 'New Conversation',
+                'status': 'ACTIVE'
+            }
+        )
+        return conversation.dict()
+    except Exception as e:
+        logger.error(f"Error creating conversation: {e}")
+        raise
+
+async def save_message(
+    conversation_id: str,
+    role: str,
+    content: str,
+    metadata: Optional[Dict] = None
+) -> Dict[str, Any]:
+    """Save a message to a conversation"""
+    try:
+        message = await prisma.message.create(
+            data={
+                'conversationId': conversation_id,
+                'role': role.upper(),
+                'content': content,
+                'metadata': metadata
+            }
+        )
+        return message.dict()
+    except Exception as e:
+        logger.error(f"Error saving message: {e}")
+        raise
+
+async def get_conversation_history(
+    conversation_id: str,
+    limit: int = 50
+) -> List[Dict[str, Any]]:
+    """Get message history for a conversation"""
+    try:
+        messages = await prisma.message.find_many(
+            where={'conversationId': conversation_id},
+            order_by={'createdAt': 'asc'},
+            take=limit
+        )
+        
+        return [
+            {
+                'role': m.role.lower(),
+                'content': m.content,
+                'metadata': m.metadata,
+                'created_at': m.createdAt.isoformat()
+            }
+            for m in messages
+        ]
+    except Exception as e:
+        logger.error(f"Error fetching conversation history: {e}")
+        return []
