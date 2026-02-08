@@ -1,4 +1,4 @@
-"""FastAPI Application Entry Point - Enhanced with caching and monitoring."""
+"""FastAPI Application Entry Point - Enhanced with caching, monitoring, and background jobs."""
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
@@ -12,6 +12,7 @@ import os
 from lib.database import connect_db, disconnect_db
 from lib.cache import cache
 from lib.monitoring import setup_logging, init_sentry, capture_exception
+from jobs import setup_scheduler
 from routes.chat import router as chat_router
 from routes.scraper import router as scraper_router
 
@@ -28,14 +29,20 @@ logger = logging.getLogger(__name__)
 # ============================================
 limiter = Limiter(key_func=get_remote_address)
 
+# Global scheduler reference
+scheduler = None
+
 # ============================================
 # APPLICATION LIFESPAN
 # ============================================
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application startup and shutdown events."""
+    global scheduler
+    
     # Startup
     logger.info("🚀 Starting AI Service...")
+    logger.info(f"Environment: {os.getenv('NODE_ENV', 'development')}")
     
     # Connect to database
     await connect_db()
@@ -44,24 +51,50 @@ async def lifespan(app: FastAPI):
     # Connect to Redis cache
     await cache.connect()
     
+    # Start background job scheduler
+    if os.getenv('ENABLE_SCRAPING', 'true').lower() == 'true':
+        scheduler = setup_scheduler()
+        scheduler.start()
+        logger.info("⏰ Background job scheduler started")
+    else:
+        logger.info("⚠️ Background jobs disabled")
+    
     logger.info("✅ AI Service ready!")
-    logger.info(f"📚 Docs: http://localhost:8001/docs")
+    logger.info(f"📚 API Docs: http://localhost:8001/docs")
+    logger.info(f"💚 Health Check: http://localhost:8001/health")
     
     yield
     
     # Shutdown
     logger.info("👋 Shutting down AI Service...")
+    
+    # Stop scheduler
+    if scheduler:
+        scheduler.shutdown(wait=True)
+        logger.info("⏹️ Background jobs stopped")
+    
+    # Disconnect services
     await cache.disconnect()
     await disconnect_db()
+    logger.info("✅ Shutdown complete")
 
 # ============================================
 # FASTAPI APPLICATION
 # ============================================
 app = FastAPI(
     title="🛍️ AI Shopping Assistant",
-    description="AI-powered product comparison service with live scraping, caching, and monitoring",
+    description="""AI-powered product comparison service with:
+    - Real-time chat interface with Groq LLM
+    - Live web scraping (Amazon, Thomann)
+    - Redis caching for performance
+    - Background job scheduling
+    - Rate limiting and security
+    - Comprehensive monitoring
+    """,
     version="2.1.0",
     lifespan=lifespan,
+    docs_url="/docs",
+    redoc_url="/redoc",
 )
 
 # Add rate limiter to app state
@@ -71,7 +104,10 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 # ============================================
 # CORS MIDDLEWARE
 # ============================================
-allowed_origins = os.getenv('ALLOWED_ORIGINS', 'http://localhost:4000,http://localhost:3000').split(',')
+allowed_origins = os.getenv(
+    'ALLOWED_ORIGINS',
+    'http://localhost:4000,http://localhost:3000,http://localhost:8000'
+).split(',')
 
 app.add_middleware(
     CORSMiddleware,
@@ -98,13 +134,23 @@ async def root(request: Request):
         "message": "AI Shopping Assistant API",
         "version": "2.1.0",
         "status": "operational",
+        "features": {
+            "ai_chat": True,
+            "streaming": True,
+            "caching": cache.enabled,
+            "background_jobs": scheduler is not None and scheduler.running,
+            "rate_limiting": True,
+            "monitoring": os.getenv('SENTRY_DSN') is not None,
+        },
         "docs": "/docs",
         "endpoints": {
             "chat": "/api/chat",
             "chat_stream": "/api/chat/stream",
+            "search": "/api/chat/search",
             "scraper": "/api/scraper",
             "health": "/health",
             "cache_stats": "/cache/stats",
+            "jobs_status": "/jobs/status",
         }
     }
 
@@ -122,24 +168,55 @@ async def health(request: Request):
     
     cache_stats = await cache.get_stats()
     
+    jobs_status = "disabled"
+    if scheduler:
+        jobs_status = "running" if scheduler.running else "stopped"
+        
     return {
         "status": "healthy" if db_status == "connected" else "degraded",
         "version": "2.1.0",
-        "backend": "FastAPI + Groq + Prisma",
+        "environment": os.getenv('NODE_ENV', 'development'),
         "services": {
             "database": db_status,
             "cache": cache_stats,
-            "scraper": "Playwright ready",
+            "background_jobs": jobs_status,
+            "scraper": "ready",
         },
-        "port": 8001
+        "timestamp": __import__('datetime').datetime.utcnow().isoformat() + "Z"
     }
 
 @app.get("/cache/stats")
 @limiter.limit("20/minute")
-async def cache_stats(request: Request):
+async def cache_stats_endpoint(request: Request):
     """Get cache statistics."""
     stats = await cache.get_stats()
     return stats
+
+@app.get("/jobs/status")
+@limiter.limit("20/minute")
+async def jobs_status(request: Request):
+    """Get background jobs status."""
+    if not scheduler:
+        return {
+            "enabled": False,
+            "message": "Background jobs are disabled"
+        }
+    
+    jobs = []
+    for job in scheduler.get_jobs():
+        jobs.append({
+            "id": job.id,
+            "name": job.name,
+            "next_run": job.next_run_time.isoformat() if job.next_run_time else None,
+            "trigger": str(job.trigger),
+        })
+    
+    return {
+        "enabled": True,
+        "running": scheduler.running,
+        "jobs": jobs,
+        "count": len(jobs)
+    }
 
 # ============================================
 # ERROR HANDLERS
@@ -162,16 +239,26 @@ async def internal_error_handler(request: Request, exc: Exception):
     })
     return {"error": "Internal server error", "status": 500}
 
+# ============================================
+# STARTUP BANNER
+# ============================================
 if __name__ == "__main__":
     import uvicorn
     
-    print("\n" + "="*60)
-    print("🚀 Starting AI Shopping Assistant")
-    print("="*60)
-    print(f"📚 Docs: http://localhost:8001/docs")
-    print(f"💚 Health: http://localhost:8001/health")
+    print("\n" + "="*70)
+    print("🚀 AI Shopping Assistant - Starting Server")
+    print("="*70)
+    print(f"📚 API Documentation: http://localhost:8001/docs")
+    print(f"💚 Health Check: http://localhost:8001/health")
     print(f"📊 Cache Stats: http://localhost:8001/cache/stats")
-    print("="*60 + "\n")
+    print(f"⏰ Jobs Status: http://localhost:8001/jobs/status")
+    print(f"")
+    print(f"🔒 Features Enabled:")
+    print(f"   - Rate Limiting: 20 requests/minute")
+    print(f"   - Redis Caching: {os.getenv('ENABLE_REDIS_CACHE', 'true')}")
+    print(f"   - Background Jobs: {os.getenv('ENABLE_SCRAPING', 'true')}")
+    print(f"   - Monitoring: {'Yes' if os.getenv('SENTRY_DSN') else 'No'}")
+    print("="*70 + "\n")
     
     uvicorn.run(
         "main:app",
