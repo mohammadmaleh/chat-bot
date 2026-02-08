@@ -9,3 +9,4 @@ export * from './components/textarea';
 
 // Export utility functions
 export * from './lib/utils';
+echo "export * from './components/tabs'" >> packages/ui/src/index.ts
