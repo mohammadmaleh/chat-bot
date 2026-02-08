@@ -2,10 +2,15 @@
 Scraper API routes.
 Endpoints for triggering product scraping and price updates.
 """
+from scrapers.thomann import ThomannScraper  # ADD THIS
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional, List
-
+from scrapers.amazon import AmazonScraper
+from scrapers.thomann import ThomannScraper  # ADD THIS LINE
+from services.price_service import PriceService
+from services.cache_service import CacheService
 # Import scrapers (they're in same parent directory)
 from scrapers.amazon import AmazonScraper
 from services.price_service import PriceService
@@ -44,41 +49,28 @@ class CacheStatsResponse(BaseModel):
     success: bool
     stats: dict
 
-
 @router.post("/search", response_model=ScrapeSearchResponse)
 async def scrape_and_save_search(request: ScrapeSearchRequest):
     """
     Scrape products from a store and save to database.
-    
-    Example:
-        POST /api/scraper/search
-        {
-            "query": "Fender Gitarre",
-            "store": "amazon",
-            "max_results": 5
-        }
     """
     try:
         products_scraped = []
         products_saved = 0
         
-        # Only Amazon supported for now
-        if request.store.lower() != "amazon":
-            raise HTTPException(
-                status_code=400, 
-                detail=f"Store '{request.store}' not supported yet. Use 'amazon'."
-            )
+        store_lower = request.store.lower()
         
-        print(f"🔍 Scraping {request.store} for: {request.query}")
+        # Route to correct scraper
+        if store_lower == "amazon":
+            async with AmazonScraper() as scraper:
+                scraped_products = await scraper.search(request.query, request.max_results)
+        elif store_lower == "thomann":
+            async with ThomannScraper() as scraper:
+                scraped_products = await scraper.search(request.query, request.max_results)
+        else:
+            raise HTTPException(400, f"Store '{request.store}' not supported yet. Use 'amazon' or 'thomann'")
         
-        # Scrape products
-        async with AmazonScraper() as scraper:
-            scraped_products = await scraper.search(
-                request.query, 
-                max_results=request.max_results
-            )
-        
-        print(f"✅ Scraped {len(scraped_products)} products")
+        print(f"✅ Scraped {len(scraped_products)} products from {request.store}")
         
         # Save to database
         async with PriceService() as price_service:
@@ -86,8 +78,8 @@ async def scrape_and_save_search(request: ScrapeSearchRequest):
                 try:
                     result = await price_service.save_scraped_product(
                         scraped,
-                        store_name="Amazon",
-                        store_domain="amazon.de"
+                        store_name=request.store.title(),
+                        store_domain=f"{request.store}.de"
                     )
                     
                     products_saved += 1
@@ -115,63 +107,7 @@ async def scrape_and_save_search(request: ScrapeSearchRequest):
     
     except Exception as e:
         print(f"❌ Scrape search error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post("/price", response_model=ScrapePriceResponse)
-async def scrape_single_price(request: ScrapePriceRequest):
-    """
-    Scrape a single product price from URL and save to database.
-    
-    Example:
-        POST /api/scraper/price
-        {
-            "url": "https://www.amazon.de/dp/B0002CZUUA",
-            "store": "amazon"
-        }
-    """
-    try:
-        if request.store.lower() != "amazon":
-            raise HTTPException(
-                status_code=400, 
-                detail=f"Store '{request.store}' not supported yet."
-            )
-        
-        print(f"🔍 Scraping product: {request.url}")
-        
-        # Scrape product details
-        async with AmazonScraper() as scraper:
-            product = await scraper.get_product(request.url)
-        
-        if not product:
-            return ScrapePriceResponse(
-                success=False,
-                product_id=None,
-                price=None,
-                message="Failed to scrape product from URL"
-            )
-        
-        # Save to database
-        async with PriceService() as price_service:
-            result = await price_service.save_scraped_product(
-                product,
-                store_name="Amazon",
-                store_domain="amazon.de"
-            )
-        
-        print(f"💾 Saved product: {product.name}")
-        
-        return ScrapePriceResponse(
-            success=True,
-            product_id=result["product_id"],
-            price=float(product.price),
-            message=f"Product saved: {product.name}"
-        )
-    
-    except Exception as e:
-        print(f"❌ Scrape price error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
+        raise HTTPException(500, str(e))
 
 @router.get("/cache/stats", response_model=CacheStatsResponse)
 async def get_cache_stats():
