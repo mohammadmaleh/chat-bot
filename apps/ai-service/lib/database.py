@@ -63,10 +63,22 @@ async def search_products(query: str, limit: int = 5) -> List[Dict[str, Any]]:
             }
         )
         
-        # Transform to dict with computed fields
+        # Transform to dict with JSON-serializable fields
         result = []
         for product in products:
-            product_dict = product.dict()
+            # FIXED: Manually construct dict to control datetime serialization
+            product_dict = {
+                'id': product.id,
+                'name': product.name,
+                'brand': product.brand,
+                'category': product.category,
+                'description': product.description,
+                'imageUrl': product.imageUrl,
+                'ean': product.ean,
+                'gtin': product.gtin,
+                'createdAt': product.createdAt.isoformat() if product.createdAt else None,
+                'updatedAt': product.updatedAt.isoformat() if product.updatedAt else None,
+            }
             
             # Add price analytics
             if product.prices:
@@ -102,10 +114,10 @@ async def get_product_prices(product_id: str) -> List[Dict[str, Any]]:
                 'currency': p.currency,
                 'availability': p.availability,
                 'url': p.url,
-                'scraped_at': p.scrapedAt.isoformat(),
-                'store_name': p.store.name,
-                'store_domain': p.store.domain,
-                'store_logo': p.store.logoUrl
+                'scraped_at': p.scrapedAt.isoformat() if p.scrapedAt else None,
+                'store_name': p.store.name if p.store else 'Unknown',
+                'store_domain': p.store.domain if p.store else None,
+                'store_logo': p.store.logoUrl if p.store else None
             }
             for p in prices
         ]
@@ -154,8 +166,8 @@ async def get_cheapest_products(
                     'image_url': product.imageUrl,
                     'price': float(cheapest.price),
                     'currency': cheapest.currency,
-                    'store_name': cheapest.store.name,
-                    'store_domain': cheapest.store.domain,
+                    'store_name': cheapest.store.name if cheapest.store else 'Unknown',
+                    'store_domain': cheapest.store.domain if cheapest.store else None,
                     'url': cheapest.url
                 })
         
@@ -179,7 +191,14 @@ async def create_conversation(user_id: str, title: Optional[str] = None) -> Dict
                 'status': 'ACTIVE'
             }
         )
-        return conversation.dict()
+        return {
+            'id': conversation.id,
+            'userId': conversation.userId,
+            'title': conversation.title,
+            'status': conversation.status,
+            'createdAt': conversation.createdAt.isoformat() if conversation.createdAt else None,
+            'updatedAt': conversation.updatedAt.isoformat() if conversation.updatedAt else None,
+        }
     except Exception as e:
         logger.error(f"Error creating conversation: {e}")
         raise
@@ -200,7 +219,14 @@ async def save_message(
                 'metadata': metadata
             }
         )
-        return message.dict()
+        return {
+            'id': message.id,
+            'conversationId': message.conversationId,
+            'role': message.role,
+            'content': message.content,
+            'metadata': message.metadata,
+            'createdAt': message.createdAt.isoformat() if message.createdAt else None,
+        }
     except Exception as e:
         logger.error(f"Error saving message: {e}")
         raise
@@ -222,7 +248,7 @@ async def get_conversation_history(
                 'role': m.role.lower(),
                 'content': m.content,
                 'metadata': m.metadata,
-                'created_at': m.createdAt.isoformat()
+                'created_at': m.createdAt.isoformat() if m.createdAt else None
             }
             for m in messages
         ]
