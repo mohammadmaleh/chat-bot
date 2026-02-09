@@ -1,3 +1,8 @@
+# 1. Ensure code structure
+mkdir -p apps/ai-service/{app,lib,scraperjobs}
+
+# 2. Real main.py (from logs [file:43])
+cat > apps/ai-service/main.py << 'EOF'
 # Full repo main.py stub (slowapi + lifespan)
 from fastapi import FastAPI
 from slowapi import Limiter
@@ -28,3 +33,8 @@ async def scrape(store: str, query: str = "headphones"):
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8001)
+EOF
+
+# 3. Stub scraper (no Playwright crash)
+cat > apps/ai-service/scraperjobs.py
+

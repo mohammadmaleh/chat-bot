@@ -1,78 +1,23 @@
-version: '3.9'
-
+# docker-compose.yml - chat-bot (no version)
 services:
-  postgres:
+  db:
     image: postgres:16-alpine
-    container_name: chatbot-postgres
-    restart: unless-stopped
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
       POSTGRES_DB: chatbot_dev
-      POSTGRES_INITDB_ARGS: '--encoding=UTF8 --locale=en_US.UTF-8'
-    ports:
-      - '5432:5432'
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U postgres']
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - chatbot-network
+      POSTGRES_PASSWORD: pass
+    ports: ["5432:5432"]
+    volumes: ['./data:/var/lib/postgresql/data']
 
   redis:
     image: redis:7-alpine
-    container_name: chatbot-redis
-    restart: unless-stopped
-    ports:
-      - '6379:6379'
-    volumes:
-      - redis_data:/data
-    command: redis-server --appendonly yes
-    healthcheck:
-      test: ['CMD', 'redis-cli', 'ping']
-      interval: 10s
-      timeout: 3s
-      retries: 5
-    networks:
-      - chatbot-network
+    ports: ["6379:6379"]
 
   ai-service:
-    build:
-      context: ./apps/ai-service
-      dockerfile: Dockerfile
-    container_name: chatbot-ai-service
-    restart: unless-stopped
-    env_file:
-      - .env
-    ports:
-      - '8001:8001'
-    environment:
-      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/chatbot_dev?schema=public
-      - POSTGRES_HOST=postgres
-      - POSTGRES_PORT=5432
-      - REDIS_URL=redis://redis:6379/0
-      - REDIS_HOST=redis
-      - PYTHONUNBUFFERED=1
+    build: ./apps/ai-service
+    ports: ["8001:8001"]
+    env_file: .env
     depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
+      - db
+      - redis
     volumes:
-      - ./apps/ai-service:/app
-    networks:
-      - chatbot-network
-    command: uvicorn main:app --host 0.0.0.0 --port 8001 --reload
-
-networks:
-  chatbot-network:
-    driver: bridge
-
-volumes:
-  postgres_data:
-    driver: local
-  redis_data:
-    driver: local
+      - ./apps/ai-service:/app  # Hot reload

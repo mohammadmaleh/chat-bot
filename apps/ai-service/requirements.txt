@@ -1,35 +1,13 @@
-fastapi==0.109.0
-uvicorn[standard]==0.27.0
-groq==0.4.1
-prisma==0.11.0
-pydantic==2.5.3
-pydantic-settings==2.1.0
-python-dotenv==1.0.0
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
 playwright==1.40.0
-
-# Security & Rate Limiting
-slowapi==0.1.9
-
-# Caching
-redis==5.0.1
-
-# Testing
-pytest==7.4.3
-pytest-asyncio==0.21.1
-pytest-mock==3.12.0
-httpx==0.25.2
-pytest-cov==4.1.0
-
-# Background Jobs
+sqlalchemy==2.0.35
+psycopg2-binary==2.9.9
+redis==5.2.1
+pydantic==2.9.2
+pydantic-settings==2.5.2
 apscheduler==3.10.4
-
-# Monitoring & Error Tracking
-sentry-sdk[fastapi]==1.39.1
-
-# Additional utilities
-python-multipart==0.0.6
-
-
-# Scraping utilities
-fake-useragent==1.4.0
-tenacity==8.2.3
+httpx==0.27.2
+python-dotenv==1.0.1
+structlog==24.4.0  # Valid max
+slowapi==0.1.9
