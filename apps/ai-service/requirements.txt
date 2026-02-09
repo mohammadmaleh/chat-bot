@@ -28,3 +28,8 @@ sentry-sdk[fastapi]==1.39.1
 
 # Additional utilities
 python-multipart==0.0.6
+
+
+# Scraping utilities
+fake-useragent==1.4.0
+tenacity==8.2.3
