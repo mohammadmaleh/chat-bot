@@ -111,26 +111,12 @@ def register_chat_routes():
     """Safely register chat routes"""
     try:
         logger.info("Loading chat routes...")
-
-        # Try simplified routes first (no Prisma dependency)
-        try:
-            from routes.chat_simple import router as chat_router_simple
-
-            app.include_router(chat_router_simple, tags=["chat"])
-            logger.info("✅ Simplified chat routes registered successfully")
-            app_state["routes_loaded"] = True
-            return True
-        except ImportError:
-            logger.info("Simplified routes not available, trying full routes...")
-
-        # Try full routes with Prisma
         from routes.chat import router as chat_router
 
         app.include_router(chat_router, prefix="/api/chat", tags=["chat"])
         logger.info("✅ Chat routes registered successfully")
         app_state["routes_loaded"] = True
         return True
-
     except ImportError as e:
         logger.error(f"❌ Import error loading chat routes: {e}")
         logger.error("   This may be due to missing dependencies. Please check:")

@@ -29,6 +29,8 @@ export default function Home() {
             "Gift ideas for coffee lovers under €50",
             "Compare Sony headphones prices",
           ]}
+
+          
         />
 
         {/* Footer */}
