@@ -41,15 +41,15 @@ def format_product_context(products: list) -> str:
                     if price_val is None:
                         logger.warning(f"Missing price value for {product_name}: {pr}")
                         continue
-                    
+
                     price = float(price_val)
-                    
+
                     # Get store name - could be direct or nested in store object
                     if isinstance(pr.get("store"), dict):
                         store = pr["store"].get("name", "Unknown")
                     else:
                         store = pr.get("store_name", "Unknown")
-                    
+
                     if price > 0:  # Only include valid prices
                         formatted_prices.append(f"€{price:.2f} at {store}")
                 except (ValueError, TypeError) as e:
@@ -97,7 +97,8 @@ async def chat(request: Request, chat_request: ChatRequest):
                     prices_list = product.get("prices", [])
                     if prices_list:
                         price_values = [
-                            float(p.get("price", 0)) for p in prices_list 
+                            float(p.get("price", 0))
+                            for p in prices_list
                             if p.get("price") and float(p.get("price", 0)) > 0
                         ]
                         if price_values:
@@ -156,7 +157,8 @@ async def chat_stream(request: Request, chat_request: ChatRequest):
                         prices_list = product.get("prices", [])
                         if prices_list:
                             price_values = [
-                                float(p.get("price", 0)) for p in prices_list 
+                                float(p.get("price", 0))
+                                for p in prices_list
                                 if p.get("price") and float(p.get("price", 0)) > 0
                             ]
                             if price_values:
