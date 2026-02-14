@@ -1,5 +1,5 @@
 import type { Config } from "tailwindcss";
-import uiConfig from "@chat-bot/ui/tailwind.config";
+import uiConfig from "../../packages/ui/tailwind.config";
 
 const config: Config = {
   ...uiConfig,
