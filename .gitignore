@@ -110,3 +110,5 @@ test_*.py
 # Storybook
 storybook-static/
 .storybook-out/
+
+*storybook.log
