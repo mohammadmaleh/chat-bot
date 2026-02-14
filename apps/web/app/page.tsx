@@ -1,43 +1,25 @@
-'use client'
-
-import { ChatInterface } from '@chat-bot/ui'
-import { useChat } from '../hooks/use-chat'
+import { Button, Card, CardHeader, CardTitle, CardDescription, CardContent, Input } from "@chatbot/ui";
 
 export default function Home() {
-  const { messages, sendMessageStream, isLoading } = useChat()
-
   return (
-    <main className="min-h-screen bg-gradient-to-b from-background to-muted/20 p-4">
-      <div className="container max-w-4xl mx-auto py-8 space-y-6">
-        {/* Header */}
-        <div className="text-center space-y-2">
-          <h1 className="text-4xl font-bold tracking-tight">
-            🛍️ AI Shopping Assistant
-          </h1>
-          <p className="text-muted-foreground">
-            Find the best prices across German stores with AI-powered search
-          </p>
-        </div>
-
-        {/* Chat Interface */}
-        <ChatInterface
-          messages={messages}
-          onSendMessage={sendMessageStream}
-          isLoading={isLoading}
-          suggestions={[
-            "Find wireless headphones under €200",
-            "Gift ideas for coffee lovers under €50",
-            "Compare Sony headphones prices",
-          ]}
-
-          
-        />
-
-        {/* Footer */}
-        <div className="text-center text-sm text-muted-foreground">
-          Powered by Groq AI • Comparing prices from Amazon, MediaMarkt, Saturn & more
-        </div>
-      </div>
+    <main className="flex min-h-screen flex-col items-center justify-center p-24 gap-8">
+      <h1 className="text-4xl font-bold">Component Library Test</h1>
+      
+      <Card className="w-[400px]">
+        <CardHeader>
+          <CardTitle>Test Card</CardTitle>
+          <CardDescription>Testing our new component library</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Input placeholder="Type something..." />
+          <div className="flex gap-2">
+            <Button>Primary</Button>
+            <Button variant="secondary">Secondary</Button>
+            <Button variant="outline">Outline</Button>
+            <Button variant="ghost">Ghost</Button>
+          </div>
+        </CardContent>
+      </Card>
     </main>
-  )
+  );
 }
