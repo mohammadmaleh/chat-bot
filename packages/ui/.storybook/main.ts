@@ -1,5 +1,4 @@
 import type { StorybookConfig } from "@storybook/react-webpack5";
-import path from "path";
 
 const config: StorybookConfig = {
   stories: ["../src/**/*.stories.@(js|jsx|mjs|ts|tsx)"],
@@ -28,28 +27,40 @@ const config: StorybookConfig = {
     },
   },
   webpackFinal: async (config) => {
+    // Remove existing CSS rules
     config.module = config.module || {};
     config.module.rules = config.module.rules || [];
     
-    // Add Tailwind CSS support
+    config.module.rules = config.module.rules.filter((rule) => {
+      if (typeof rule !== 'object' || !rule) return true;
+      if (!rule.test) return true;
+      const testStr = rule.test.toString();
+      return !testStr.includes('css');
+    });
+
+    // Add proper Tailwind CSS handling
     config.module.rules.push({
       test: /\.css$/,
       use: [
         'style-loader',
-        'css-loader',
+        {
+          loader: 'css-loader',
+          options: {
+            importLoaders: 1,
+          },
+        },
         {
           loader: 'postcss-loader',
           options: {
             postcssOptions: {
-              plugins: [
-                require('tailwindcss'),
-                require('autoprefixer'),
-              ],
+              plugins: {
+                tailwindcss: {},
+                autoprefixer: {},
+              },
             },
           },
         },
       ],
-      include: path.resolve(__dirname, '../'),
     });
 
     return config;
