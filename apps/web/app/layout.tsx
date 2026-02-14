@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import "@chatbot/ui/styles";
+import "@chat-bot/ui/styles";
 import "./globals.css";
 
 export const metadata: Metadata = {

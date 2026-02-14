@@ -1,4 +1,4 @@
-import { Button, Card, CardHeader, CardTitle, CardDescription, CardContent, Input } from "@chatbot/ui";
+import { Button, Card, CardHeader, CardTitle, CardDescription, CardContent, Input } from "@chat-bot/ui";
 
 export default function Home() {
   return (
