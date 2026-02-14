@@ -1,4 +1,3 @@
-import type { Meta, StoryObj } from '@storybook/react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from '../components/primitives/card';
 import { Button } from '../components/primitives/button';
 
@@ -9,12 +8,11 @@ const meta = {
     layout: 'centered',
   },
   tags: ['autodocs'],
-} satisfies Meta<typeof Card>;
+};
 
 export default meta;
-type Story = StoryObj<typeof meta>;
 
-export const Default: Story = {
+export const Default = {
   render: () => (
     <Card className="w-[350px]">
       <CardHeader>
@@ -28,7 +26,7 @@ export const Default: Story = {
   ),
 };
 
-export const WithFooter: Story = {
+export const WithFooter = {
   render: () => (
     <Card className="w-[350px]">
       <CardHeader>
@@ -46,7 +44,7 @@ export const WithFooter: Story = {
   ),
 };
 
-export const Simple: Story = {
+export const Simple = {
   render: () => (
     <Card className="w-[350px] p-6">
       <p>A simple card without header or footer.</p>
