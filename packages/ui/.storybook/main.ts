@@ -10,10 +10,8 @@ function getAbsolutePath(value: string) {
 const config: StorybookConfig = {
   stories: ["../src/**/*.mdx", "../src/**/*.stories.@(js|jsx|mjs|ts|tsx)"],
   addons: [
-    getAbsolutePath("@storybook/addon-essentials"),
     getAbsolutePath("@storybook/addon-webpack5-compiler-swc"),
     getAbsolutePath("@storybook/addon-a11y"),
-    getAbsolutePath("@storybook/addon-onboarding"),
   ],
   framework: {
     name: getAbsolutePath("@storybook/react-webpack5"),
