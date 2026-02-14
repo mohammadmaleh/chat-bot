@@ -106,3 +106,7 @@ docker-compose.override.yml
 
 amazon_search.png
 test_*.py
+
+# Storybook
+storybook-static/
+.storybook-out/
