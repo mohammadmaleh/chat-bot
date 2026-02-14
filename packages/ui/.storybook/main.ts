@@ -38,7 +38,7 @@ const config: StorybookConfig = {
       return !testStr.includes('css');
     });
 
-    // Add proper Tailwind CSS handling
+    // Add CSS handling for Tailwind v4
     config.module.rules.push({
       test: /\.css$/,
       use: [
@@ -49,17 +49,7 @@ const config: StorybookConfig = {
             importLoaders: 1,
           },
         },
-        {
-          loader: 'postcss-loader',
-          options: {
-            postcssOptions: {
-              plugins: {
-                tailwindcss: {},
-                autoprefixer: {},
-              },
-            },
-          },
-        },
+        'postcss-loader',
       ],
     });
 
